@@ -1,4 +1,4 @@
-# YT-Audio
+# YT2MP3
 
 A modern, high-quality YouTube audio downloader with a sleek web interface.
 
@@ -30,15 +30,31 @@ If you prefer to run the application in a container:
 
 ### 1. Build the Image
 ```bash
-docker build -t yt-audio .
+docker build -t yt2mp3 .
 ```
 
 ### 2. Run the Container
 ```bash
-docker run -d -p 8000:8000 --name yt-audio-app yt-audio
+docker run -d -p 8000:8000 --name yt2mp3-app yt2mp3
 ```
 
 Visit [http://localhost:8000](http://localhost:8000) to access the UI.
+
+## 📤 Publishing to Docker Hub
+
+1.  **Login to Docker Hub**:
+    ```bash
+    docker login
+    ```
+2.  **Tag your image**:
+    Replace `<username>` with your Docker Hub username.
+    ```bash
+    docker tag yt2mp3 <username>/yt2mp3:latest
+    ```
+3.  **Push the image**:
+    ```bash
+    docker push <username>/yt2mp3:latest
+    ```
 
 ## 📁 Project Structure
 - `main.py`: FastAPI backend & API endpoints.

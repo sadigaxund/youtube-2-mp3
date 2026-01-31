@@ -1,4 +1,4 @@
-# YT-Audio: High-Quality YouTube Audio Downloader
+# YT2MP3: High-Quality YouTube Audio Downloader
 
 A lightweight, modern web application to download and stream high-quality (320kbps) MP3 audio from YouTube URLs.
 
@@ -12,7 +12,7 @@ A lightweight, modern web application to download and stream high-quality (320kb
 
 Run the container using:
 ```bash
-docker run -d -p 8000:8000 --name yt-audio sakhund/yt-audio
+docker run -d -p 8000:8000 --name yt2mp3 <username>/yt2mp3
 ```
 
 Then visit `http://localhost:8000` in your browser.

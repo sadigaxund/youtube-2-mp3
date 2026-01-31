@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YT Audio Downloader</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@400;600;800&display=swap"
+        rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        :root {
+            --primary: #ff0050;
+            --primary-glow: rgba(255, 0, 80, 0.5);
+            --bg: #0f1115;
+            --card-bg: rgba(255, 255, 255, 0.05);
+            --card-border: rgba(255, 255, 255, 0.1);
+            --text: #ffffff;
+            --text-dim: #94a3b8;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Inter', sans-serif;
+        }
+
+        body {
+            background-color: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-image:
+                radial-gradient(circle at 10% 20%, rgba(255, 0, 80, 0.1) 0%, transparent 40%),
+                radial-gradient(circle at 90% 80%, rgba(0, 163, 255, 0.1) 0%, transparent 40%);
+            overflow-x: hidden;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 500px;
+            padding: 2rem;
+        }
+
+        .card {
+            background: var(--card-bg);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--card-border);
+            border-radius: 24px;
+            padding: 2.5rem;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            animation: fadeIn 0.6s ease-out;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        h1 {
+            font-family: 'Outfit', sans-serif;
+            font-size: 2.5rem;
+            font-weight: 800;
+            text-align: center;
+            background: linear-gradient(135deg, #fff 0%, #ff0050 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .subtitle {
+            color: var(--text-dim);
+            text-align: center;
+            font-size: 0.95rem;
+            margin-top: -1rem;
+        }
+
+        .input-group {
+            position: relative;
+        }
+
+        input {
+            width: 100%;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            padding: 1rem 1rem 1rem 3rem;
+            color: #fff;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 4px var(--primary-glow);
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .input-icon {
+            position: absolute;
+            left: 1rem;
+            top: 1.1rem;
+            color: var(--text-dim);
+            pointer-events: none;
+            transition: color 0.3s ease;
+        }
+
+        input:focus+.input-icon {
+            color: var(--primary);
+        }
+
+        button {
+            width: 100%;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            padding: 1rem;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            margin-top: 0.5rem;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px -5px var(--primary-glow);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .preview {
+            padding-top: 1.5rem;
+            border-top: 1px solid var(--card-border);
+            display: none;
+            flex-direction: column;
+            gap: 1.5rem;
+            animation: slideDown 0.4s ease-out;
+        }
+
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .preview-card {
+            display: flex;
+            gap: 1.25rem;
+            align-items: center;
+        }
+
+        .thumbnail {
+            width: 80px;
+            height: 80px;
+            border-radius: 12px;
+            object-fit: cover;
+            border: 1px solid var(--card-border);
+            flex-shrink: 0;
+        }
+
+        .info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .info h3 {
+            font-size: 1rem;
+            margin-bottom: 0.25rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .info p {
+            color: var(--text-dim);
+            font-size: 0.85rem;
+        }
+
+        .progress-container {
+            display: none;
+        }
+
+        .progress-bar-bg {
+            width: 100%;
+            height: 8px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-bottom: 0.5rem;
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            background: var(--primary);
+            width: 0%;
+            transition: width 0.3s ease;
+            box-shadow: 0 0 10px var(--primary);
+        }
+
+        .progress-stats {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.75rem;
+            color: var(--text-dim);
+        }
+
+        .error-msg {
+            color: #ff4d4d;
+            font-size: 0.85rem;
+            margin-top: 0.75rem;
+            display: none;
+            text-align: center;
+        }
+
+        /* Success animation */
+        .success-checkmark {
+            display: none;
+            color: #00e676;
+            text-align: center;
+            padding-top: 1rem;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="card">
+            <h1>YT2Nextcloud</h1>
+            <p class="subtitle">Download high-quality audio in seconds</p>
+
+            <div class="input-group">
+                <input type="text" id="urlInput" placeholder="Paste YouTube URL here...">
+                <i data-lucide="link" class="input-icon"></i>
+                <div id="errorMsg" class="error-msg">Please enter a valid YouTube URL</div>
+            </div>
+
+            <div id="preview" class="preview">
+                <div class="preview-card">
+                    <img id="thumb" class="thumbnail" src="" alt="Thumbnail">
+                    <div class="info">
+                        <h3 id="title">Video Title</h3>
+                        <p id="author">Channel Name</p>
+                    </div>
+                </div>
+
+                <div id="progress" class="progress-container">
+                    <div class="progress-bar-bg">
+                        <div id="progressBar" class="progress-bar-fill"></div>
+                    </div>
+                    <div class="progress-stats">
+                        <span id="status">Preparing...</span>
+                        <span id="percent">0%</span>
+                    </div>
+                </div>
+            </div>
+
+            <button id="downloadBtn" disabled>
+                <i data-lucide="download"></i>
+                <span>Download MP3</span>
+            </button>
+
+            <div id="success" class="success-checkmark">
+                <i data-lucide="check-circle" style="width: 48px; height: 48px; margin: 0 auto 0.5rem;"></i>
+                <p>Download complete!</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        lucide.createIcons();
+
+        const urlInput = document.getElementById('urlInput');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const errorMsg = document.getElementById('errorMsg');
+        const preview = document.getElementById('preview');
+        const thumb = document.getElementById('thumb');
+        const title = document.getElementById('title');
+        const author = document.getElementById('author');
+        const progress = document.getElementById('progress');
+        const progressBar = document.getElementById('progressBar');
+        const status = document.getElementById('status');
+        const percent = document.getElementById('percent');
+        const success = document.getElementById('success');
+
+        let session_id = null;
+        let pollingInterval = null;
+
+        urlInput.addEventListener('input', debounce(async (e) => {
+            const url = e.target.value.trim();
+            if (!url) {
+                resetUI();
+                return;
+            }
+
+            try {
+                const response = await fetch(`/info?url=${encodeURIComponent(url)}`);
+                if (response.ok) {
+                    const data = await response.json();
+                    showPreview(data);
+                    errorMsg.style.display = 'none';
+                    downloadBtn.disabled = false;
+                } else {
+                    throw new Error();
+                }
+            } catch (err) {
+                resetUI();
+                if (url) errorMsg.style.display = 'block';
+            }
+        }, 500));
+
+        downloadBtn.addEventListener('click', async () => {
+            const url = urlInput.value.trim();
+            session_id = Math.random().toString(36).substring(7);
+
+            downloadBtn.disabled = true;
+            progress.style.display = 'block';
+            success.style.display = 'none';
+
+            // Start polling progress
+            startPolling();
+
+            // Trigger the download stream
+            // We use window.location to trigger browser download
+            const downloadUrl = `/stream?url=${encodeURIComponent(url)}&session_id=${session_id}`;
+            window.location.href = downloadUrl;
+        });
+
+        function showPreview(data) {
+            thumb.src = data.thumbnail;
+            title.textContent = data.title;
+            author.textContent = data.author;
+            preview.style.display = 'flex';
+        }
+
+        function resetUI() {
+            preview.style.display = 'none';
+            downloadBtn.disabled = true;
+            progress.style.display = 'none';
+            success.style.display = 'none';
+            if (pollingInterval) clearInterval(pollingInterval);
+        }
+
+        function startPolling() {
+            if (pollingInterval) clearInterval(pollingInterval);
+
+            pollingInterval = setInterval(async () => {
+                try {
+                    const response = await fetch(`/progress/${session_id}`);
+                    const data = await response.json();
+
+                    if (data.status === 'downloading' || data.status === 'processing') {
+                        const p = data.progress || 0;
+                        progressBar.style.width = p + '%';
+                        percent.textContent = Math.round(p) + '%';
+                        status.textContent = data.status === 'processing' ? 'Converting...' : `Downloading... (${data.speed || ''})`;
+                    }
+
+                    if (data.status === 'finished' || (data.status === 'not_started' && progressBar.style.width === '100%')) {
+                        // Sometimes the session is cleared before we get the 'finished' status
+                        completeUI();
+                    }
+                } catch (e) {
+                    console.error('Polling error', e);
+                }
+            }, 1000);
+        }
+
+        function completeUI() {
+            clearInterval(pollingInterval);
+            progressBar.style.width = '100%';
+            percent.textContent = '100%';
+            status.textContent = 'Finished!';
+            downloadBtn.disabled = false;
+            success.style.display = 'block';
+            // Hide progress after a while
+            setTimeout(() => {
+                progress.style.display = 'none';
+            }, 3000);
+        }
+
+        function debounce(func, wait) {
+            let timeout;
+            return function (...args) {
+                clearTimeout(timeout);
+                timeout = setTimeout(() => func.apply(this, args), wait);
+            };
+        }
+    </script>
+</body>
+
+</html>

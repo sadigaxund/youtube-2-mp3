@@ -59,6 +59,10 @@ if not BROWSER_DOWNLOAD_MODE:
         print(f"WARNING: Could not use {ENV_SAVE_DIR}. Falling back to: {DOWNLOAD_DIR}")
 else:
     print("BROWSER DOWNLOAD MODE: Files will be streamed to browser (no save directory configured)")
+    print("----------------------------------------------------------------")
+    print("    MODE: Browser Download (Files are temporary)")
+    print("    NOTE: Set SAVE_DIRECTORY env var or --save-dir to save files to disk.")
+    print("----------------------------------------------------------------")
 
 # Create static directory if it doesn't exist
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
@@ -70,7 +74,10 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 
 def cleanup_cache():
-    """Removes old cached files to save space"""
+    """
+    Removes cached files older than 2 hours to prevent disk bloat.
+    Runs periodically as a background task.
+    """
     try:
         now = datetime.datetime.now()
         for f in os.listdir(CACHE_DIR):
@@ -90,7 +97,10 @@ def cleanup_session(session_id: str):
         print(f"Error cleaning up session {session_id}: {e}")
 
 def get_unique_path(directory: str, filename: str) -> str:
-    """Appends _copy if file exists to prevent overwriting"""
+    """
+    Generates a unique file path by appending a counter if the file already exists.
+    Example: song.mp3 -> song_copy1.mp3 -> song_copy2.mp3
+    """
     base, ext = os.path.splitext(filename)
     path = os.path.join(directory, filename)
     counter = 1
@@ -294,7 +304,6 @@ async def save_audio(
         final_filename = os.path.basename(final_path)
         output_filename_base = os.path.splitext(final_filename)[0]
 
-        # 5. Build user metadata dict
         # 5. Build user metadata dict
         user_metadata = {}
         if meta_title: user_metadata['title'] = meta_title

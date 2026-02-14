@@ -676,11 +676,6 @@ def apply_audio_processing(
         raise e
 
 
-def normalize_loudness(audio_path: str):
-    """Legacy function, now using apply_audio_processing"""
-    apply_audio_processing(audio_path, normalize=True)
-
-
 def download_to_cache(url: str, cache_dir: str) -> str:
     """
     Downloads raw audio to a cache directory for quick previewing.

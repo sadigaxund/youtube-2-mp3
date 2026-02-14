@@ -1,8 +1,6 @@
 # Ignore my stupid files
 
 /backup
-__pycache__/
-__pycache__/*
 ~/Downloads
 
 

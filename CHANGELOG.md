@@ -8,6 +8,11 @@ Releases are cut by pushing a `vX.Y.Z` git tag, which builds and publishes the
 Docker image (`sakhund/youtify:<version>` + `:latest`).
 
 
+#  [v2.3.2] - 2026-06-30
+
+## Fixed
+- **Stale sidecar cleanup on rebuild** — `POST /library/rebuild` and server startup now automatically purge sidecars, playlists, and originals whose MP3 files no longer exist. The DB is fully cleared before re-indexing so tracks with deleted files don't reappear as empty stubs. Previously, stale playlists would survive rebuild and keep referencing missing tracks.
+
 #  [v2.3.1] - 2026-06-10
 
 ## Changed (Mobile Polish)

@@ -10,8 +10,31 @@ Docker image (`sakhund/youtify:<version>` + `:latest`).
 
 #  [v2.3.2] - 2026-06-30
 
-## Fixed
-- **Stale sidecar cleanup on rebuild** — `POST /library/rebuild` and server startup now automatically purge sidecars, playlists, and originals whose MP3 files no longer exist. The DB is fully cleared before re-indexing so tracks with deleted files don't reappear as empty stubs. Previously, stale playlists would survive rebuild and keep referencing missing tracks.
+Database index integrity fixes and automatic stale sidecar cleanup.
+
+This patch resolves a persistent state-inconsistency bug where deleted MP3 files left dangling sidecars, empty playlists, and orphaned database rows that survived rebuilds and confused the library view.
+
+## ✨ Highlights
+
+* **Automatic Stale Sidecar Eviction:** The rebuild pipeline (`POST /library/rebuild` and server startup) now runs a pre-flight cleanup pass that removes sidecar JSON files whose referenced MP3 no longer exists, prunes dead `track_ids` from playlist sidecars (deleting empty playlists + their covers), and sweeps orphaned originals. The database is fully wiped before re-indexing, so only tracks with live files on disk appear in the library.
+* **Consistent Playlist/Track Reconciliation:** Previously, deleted tracks left phantom playlists with stale track counts that survived every rebuild. The cleanup now deletes empty playlists and prunes missing `track_ids` from surviving ones, ensuring playlist metadata always reflects reality.
+
+## 🛠️ Bug Fixes
+
+* **Phantom Playlists After File Deletion:** Fixed a critical rebuild gap where `rebuild_from_sidecars` skipped missing files (correctly) but left their database rows untouched, while `rebuild_playlists_from_sidecars` never validated that its referenced tracks existed. Stale playlists now vanish with their tracks.
+* **Orphaned Originals Accumulation:** Archived original audio files whose metadata sidecar was removed no longer accumulate unbounded under `.youtify/originals/` — they are cleaned up during the next rebuild.
+
+## 🐳 Deployment
+
+Pull the v2.3.2 image layer directly from Docker Hub:
+
+```bash
+docker pull sakhund/youtify:2.3.2
+```
+
+---
+
+**Full Changelog**: https://github.com/sadigaxund/Youtify/compare/v2.3.1...v2.3.2
 
 #  [v2.3.1] - 2026-06-10
 

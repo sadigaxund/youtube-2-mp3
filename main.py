@@ -137,6 +137,95 @@ def cleanup_stale_sidecars():
     # 4. Prune DB entries that no longer have sidecars.
     db.prune_stale(META_DIR, PLAYLISTS_DIR)
 
+
+def adopt_file(abs_path: str, rel_path: str) -> str:
+    """
+    Write an unresolved stub sidecar for an audio file that has no metadata
+    entry, prefilled from its embedded tags. The track then shows up in the
+    library's unresolved drop-zone until the user resolves it via the
+    metadata editor. Deterministic id: re-discovering the same path is an
+    update, not a duplicate.
+    """
+    from youtube_downloader import read_audio_tags
+    track_id = "loc" + hashlib.sha1(rel_path.encode("utf-8")).hexdigest()[:12]
+    try:
+        tags = read_audio_tags(abs_path) or {}
+    except Exception:
+        tags = {}
+    now = datetime.datetime.now().isoformat()
+    try:
+        created = datetime.datetime.fromtimestamp(os.path.getmtime(abs_path)).isoformat()
+    except OSError:
+        created = now
+    prev = read_sidecar(track_id) or {}
+    sidecar = {
+        "schema_version": 2,
+        "track_id": track_id,
+        "youtube_id": track_id,   # no known source; the local id doubles as one
+        "source_url": f"file:{rel_path}",
+        "rel_path": rel_path,
+        "filename": os.path.basename(abs_path),
+        "original_rel": None,
+        "duration": get_audio_duration(abs_path),
+        "effects": {},
+        "metadata": {
+            "title": tags.get("title") or os.path.splitext(os.path.basename(abs_path))[0],
+            "album": tags.get("album"),
+            "albums": [tags["album"]] if tags.get("album") else [],
+            "year": tags.get("year"),
+            "composer": tags.get("composer"),
+            "artists": split_multi(tags.get("artist")),
+            "genres": split_multi(tags.get("genre")),
+            "delimiter": "|",
+            "custom_tags": [],
+        },
+        "stats": prev.get("stats") or {"play_count": 0, "last_played": None},
+        "favorite": bool(prev.get("favorite", False)),
+        "unresolved": True,
+        "created_at": prev.get("created_at") or created,
+        "updated_at": now,
+    }
+    write_sidecar(track_id, sidecar)
+    return track_id
+
+
+def discover_unindexed() -> int:
+    """
+    Adopt audio files under the save dir that no sidecar references (runs as
+    part of every rebuild). Each becomes an unresolved stub track; nothing is
+    moved or modified on disk.
+    """
+    if BROWSER_DOWNLOAD_MODE:
+        return 0
+    referenced = set()
+    for path in glob.glob(os.path.join(META_DIR, "*.json")):
+        try:
+            with open(path) as f:
+                rel = json.load(f).get("rel_path")
+            if rel:
+                referenced.add(os.path.normpath(rel))
+        except Exception:
+            pass
+    count = 0
+    for root, dirs, files in os.walk(DOWNLOAD_DIR):
+        # .youtify holds the archive/sidecars/covers, not library audio.
+        dirs[:] = [d for d in dirs if d != ".youtify"]
+        for fname in files:
+            if os.path.splitext(fname)[1].lower().lstrip(".") not in ALLOWED_UPLOAD_EXTS:
+                continue
+            abs_path = os.path.join(root, fname)
+            rel = os.path.normpath(os.path.relpath(abs_path, DOWNLOAD_DIR))
+            if rel in referenced:
+                continue
+            try:
+                adopt_file(abs_path, rel)
+                count += 1
+            except Exception as e:
+                log.warning("discovery: failed to adopt %s: %s", rel, e)
+    if count:
+        log.info("Discovery: adopted %d unindexed file(s) as unresolved.", count)
+    return count
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Rebuild the DB index from the on-disk sidecars so the DB is fully
@@ -145,6 +234,7 @@ async def lifespan(app: FastAPI):
     if not BROWSER_DOWNLOAD_MODE:
         try:
             cleanup_stale_sidecars()
+            discover_unindexed()
             n = db.rebuild_from_sidecars(META_DIR, DOWNLOAD_DIR)
             p = db.rebuild_playlists_from_sidecars(PLAYLISTS_DIR)
             log.info("Library index: %d track(s), %d playlist(s) loaded from sidecars.", n, p)
@@ -1147,12 +1237,53 @@ def library_detail(audio_id: int):
 
 @app.post("/library/rebuild")
 def library_rebuild():
-    """Re-index the DB from the on-disk sidecars (stale entries are purged first)."""
+    """
+    Re-index the DB from the on-disk sidecars: stale entries are purged first,
+    then unindexed audio files in the save dir are adopted as unresolved.
+    """
     _require_library()
     cleanup_stale_sidecars()
+    discovered = discover_unindexed()
     n = db.rebuild_from_sidecars(META_DIR, DOWNLOAD_DIR)
     db.rebuild_playlists_from_sidecars(PLAYLISTS_DIR)
-    return {"indexed": n}
+    return {"indexed": n, "discovered": discovered}
+
+
+@app.post("/library/import")
+async def library_import(files: list[UploadFile] = File(...)):
+    """
+    Drop-zone ingest: save uploaded audio files straight into the library as
+    unresolved tracks (stub sidecar + index) for later manual resolution —
+    unlike /upload, which stages a single file for the download form.
+    """
+    _require_library()
+    imported, errors = [], []
+    for file in files:
+        name = os.path.basename(file.filename or "")
+        ext = os.path.splitext(name)[1].lower().lstrip(".")
+        if ext not in ALLOWED_UPLOAD_EXTS:
+            errors.append({"filename": name, "error": f"unsupported type '.{ext}'"})
+            continue
+        base = sanitize(os.path.splitext(name)[0]) or "import"
+        dest = get_unique_path(DOWNLOAD_DIR, f"{base}.{ext}")
+        try:
+            with open(dest, "wb") as out:
+                shutil.copyfileobj(file.file, out)
+        finally:
+            await file.close()
+        if not get_audio_duration(dest):
+            try:
+                os.remove(dest)
+            except OSError:
+                pass
+            errors.append({"filename": name, "error": "not readable as audio"})
+            continue
+        rel = os.path.normpath(os.path.relpath(dest, DOWNLOAD_DIR))
+        track_id = adopt_file(dest, rel)
+        audio_id = db.upsert_from_sidecar(read_sidecar(track_id), f"{track_id}.json")
+        imported.append({"filename": os.path.basename(dest), "track_id": track_id,
+                         "id": audio_id})
+    return {"imported": imported, "errors": errors}
 
 
 @app.patch("/library/{audio_id}")
@@ -1245,6 +1376,8 @@ def library_patch(audio_id: int, payload: dict = Body(...)):
         "custom_tags": custom_tags,
     }
     sidecar["updated_at"] = datetime.datetime.now().isoformat()
+    # Saving metadata is what "resolving" a discovered/imported track means.
+    sidecar.pop("unresolved", None)
     write_sidecar(track_id, sidecar)
 
     db.upsert_audio(
@@ -1254,6 +1387,7 @@ def library_patch(audio_id: int, payload: dict = Body(...)):
         rel_path=new_rel, filename=new_filename, sidecar_path=f"{track_id}.json",
         effects=eff, artists=artists, genres=genres, albums=albums,
         custom_fields={t["key"]: t.get("value") for t in custom_tags if t.get("key")},
+        unresolved=False,
     )
     return db.get_audio_detail(audio_id)
 

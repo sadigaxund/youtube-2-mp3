@@ -34,14 +34,15 @@ Functions freely cross-reference across files without import/export.
 - `GET /` serves `static/index.html`
 - `GET /stream` — live preview with effects (FLAC cached; `quality=fast` → 128k MP3)
 - `POST /save` — download + process + save
-- `POST /upload` — local file ingest
+- `POST /upload` — local file ingest (stages one file for the download form)
+- `POST /library/import` — drop-zone batch ingest straight into the library as unresolved tracks
 - `GET|POST|PATCH|DELETE /library/*` — saved tracks; `POST /library/{id}/played` + `PATCH /library/{id}/favorite` for stats (sidecar-backed, survive DB rebuilds)
 - `GET|POST|PATCH|DELETE /playlists/*` — playlists
 - `GET|PUT|DELETE /facets/{field}/{value}/cover` — custom Browse-by thumbnails (`.youtify/facets/`)
 
 ## Compatibility policy
 
-- Sidecars (`.youtify/meta/*.json`) are the source of truth; `metadata.db` is a disposable index rebuilt from them on startup.
+- Sidecars (`.youtify/meta/*.json`) are the source of truth; `metadata.db` is a disposable index rebuilt from them on startup. Tracks are keyed by `track_id` (= `youtube_id`, or `youtube_id__<hash8>` for a cut segment, or `loc<hash12>` for discovered/imported local files); rebuild also adopts unindexed audio files in the save dir as `unresolved` stub sidecars.
 - New sidecar keys are **additive** and read with `.get(...)` defaults; DB migrations are additive `try: ALTER TABLE` statements. Updates must never require re-downloading tracks.
 - A breaking sidecar change bumps `schema_version` and ships a read-time migration.
 

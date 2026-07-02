@@ -22,7 +22,7 @@ import sqlite3
 from contextlib import contextmanager
 from typing import Optional, Dict, Any, List
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 def _norm_list(values, titlecase=False) -> List[str]:
@@ -92,6 +92,7 @@ class AudioMetadataDB:
                     play_count INTEGER DEFAULT 0,
                     last_played TIMESTAMP,
                     favorite INTEGER DEFAULT 0,
+                    unresolved INTEGER DEFAULT 0,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
@@ -153,7 +154,8 @@ class AudioMetadataDB:
                      albums: Optional[List[str]] = None,
                      custom_fields: Optional[Dict[str, Any]] = None,
                      play_count: Optional[int] = None, last_played: Optional[str] = None,
-                     favorite: Optional[bool] = None, created_at: Optional[str] = None) -> int:
+                     favorite: Optional[bool] = None, created_at: Optional[str] = None,
+                     unresolved: Optional[bool] = None) -> int:
         """
         Insert or update a track by track_id (id is preserved on update).
         Tags and custom fields are fully replaced to mirror the current state.
@@ -178,15 +180,16 @@ class AudioMetadataDB:
             dur_val = None
 
         fav_val = None if favorite is None else (1 if favorite else 0)
+        unres_val = None if unresolved is None else (1 if unresolved else 0)
 
         with self.get_connection() as conn:
             conn.execute('''
                 INSERT INTO audio_files
                     (track_id, youtube_id, title, album, year, duration, rel_path, filename,
                      sidecar_path, effects_json, play_count, last_played, favorite,
-                     created_at, updated_at)
+                     unresolved, created_at, updated_at)
                 VALUES (?,?,?,?,?,?,?,?,?,?, COALESCE(?, 0), ?, COALESCE(?, 0),
-                        COALESCE(?, CURRENT_TIMESTAMP), CURRENT_TIMESTAMP)
+                        COALESCE(?, 0), COALESCE(?, CURRENT_TIMESTAMP), CURRENT_TIMESTAMP)
                 ON CONFLICT(track_id) DO UPDATE SET
                     youtube_id=excluded.youtube_id,
                     title=excluded.title, album=excluded.album, year=excluded.year,
@@ -196,11 +199,13 @@ class AudioMetadataDB:
                     play_count=COALESCE(?, audio_files.play_count),
                     last_played=COALESCE(?, audio_files.last_played),
                     favorite=COALESCE(?, audio_files.favorite),
+                    unresolved=COALESCE(?, audio_files.unresolved),
                     created_at=COALESCE(?, audio_files.created_at),
                     updated_at=CURRENT_TIMESTAMP
             ''', (track_id, youtube_id, title, album, year_val, dur_val, rel_path, filename,
-                  sidecar_path, effects_json, play_count, last_played, fav_val, created_at,
-                  play_count, last_played, fav_val, created_at))
+                  sidecar_path, effects_json, play_count, last_played, fav_val, unres_val,
+                  created_at,
+                  play_count, last_played, fav_val, unres_val, created_at))
 
             # lastrowid is unreliable on the DO UPDATE branch — re-select.
             row = conn.execute("SELECT id FROM audio_files WHERE track_id=?",
@@ -452,6 +457,38 @@ class AudioMetadataDB:
 
     # -------------------------------------------------------------- rebuilding
 
+    def upsert_from_sidecar(self, sc: dict, sidecar_basename: str) -> int:
+        """Index one parsed sidecar dict (shared by rebuild and live imports)."""
+        meta = sc.get("metadata", {})
+        stats = sc.get("stats") or {}
+        return self.upsert_audio(
+            # Pre-v2 sidecars carry no track_id: the youtube_id doubles
+            # as one (their filename is <youtube_id>.json).
+            track_id=sc.get("track_id") or sc["youtube_id"],
+            youtube_id=sc["youtube_id"],
+            title=meta.get("title"),
+            album=meta.get("album"),
+            year=meta.get("year"),
+            duration=sc.get("duration"),
+            rel_path=sc.get("rel_path"),
+            filename=sc.get("filename"),
+            sidecar_path=sidecar_basename,
+            effects=sc.get("effects"),
+            artists=meta.get("artists", []),
+            genres=meta.get("genres", []),
+            albums=meta.get("albums") or ([meta["album"]] if meta.get("album") else []),
+            custom_fields={t["key"]: t["value"]
+                           for t in meta.get("custom_tags", []) if t.get("key")},
+            play_count=stats.get("play_count", 0),
+            last_played=stats.get("last_played"),
+            favorite=sc.get("favorite", False),
+            unresolved=sc.get("unresolved", False),
+            # Real date-added comes from the sidecar; without this every
+            # rebuild would reset created_at to "now". Normalized to
+            # SQLite's CURRENT_TIMESTAMP format so string sorting works.
+            created_at=(sc.get("created_at") or "").replace("T", " ")[:19] or None,
+        )
+
     def rebuild_from_sidecars(self, meta_dir: str, save_dir: str) -> int:
         """Repopulate the DB from sidecar JSONs. Skips tracks whose MP3 is gone."""
         count = 0
@@ -462,34 +499,7 @@ class AudioMetadataDB:
                 rel = sc.get("rel_path")
                 if rel and not os.path.exists(os.path.join(save_dir, rel)):
                     continue  # stale sidecar, file removed
-                meta = sc.get("metadata", {})
-                stats = sc.get("stats") or {}
-                self.upsert_audio(
-                    # Pre-v2 sidecars carry no track_id: the youtube_id doubles
-                    # as one (their filename is <youtube_id>.json).
-                    track_id=sc.get("track_id") or sc["youtube_id"],
-                    youtube_id=sc["youtube_id"],
-                    title=meta.get("title"),
-                    album=meta.get("album"),
-                    year=meta.get("year"),
-                    duration=sc.get("duration"),
-                    rel_path=rel,
-                    filename=sc.get("filename"),
-                    sidecar_path=os.path.basename(path),
-                    effects=sc.get("effects"),
-                    artists=meta.get("artists", []),
-                    genres=meta.get("genres", []),
-                    albums=meta.get("albums") or ([meta["album"]] if meta.get("album") else []),
-                    custom_fields={t["key"]: t["value"]
-                                   for t in meta.get("custom_tags", []) if t.get("key")},
-                    play_count=stats.get("play_count", 0),
-                    last_played=stats.get("last_played"),
-                    favorite=sc.get("favorite", False),
-                    # Real date-added comes from the sidecar; without this every
-                    # rebuild would reset created_at to "now". Normalized to
-                    # SQLite's CURRENT_TIMESTAMP format so string sorting works.
-                    created_at=(sc.get("created_at") or "").replace("T", " ")[:19] or None,
-                )
+                self.upsert_from_sidecar(sc, os.path.basename(path))
                 count += 1
             except Exception as e:
                 print(f"Warning: failed to index sidecar {path}: {e}")

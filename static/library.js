@@ -30,7 +30,8 @@
                 let libFilters = [];                    // [{field, value}]
                 let libSort = { field: 'created_at', dir: -1 };
                 let libPlaylists = [];                  // sidebar playlists
-                let currentSource = { type: 'all' };    // {type:'all'} | {type:'playlist',...} | {type:'browse', field, value}
+                let libUnresolved = [];                 // discovered/imported tracks awaiting metadata
+                let currentSource = { type: 'all' };    // {type:'all'} | {type:'playlist',...} | {type:'browse', field, value} | {type:'unresolved'}
                 let browseField = 'album';               // active Browse-by facet
                 let facetCovers = {};                    // {field: Set(values with a custom cover)}
                 let facetCoverVer = Date.now();          // cache-buster for facet covers
@@ -237,7 +238,12 @@
                         const res = await fetch('/library');
                         if (!res.ok) return;
                         const data = await res.json();
-                        libItems = data.items || [];
+                        // Unresolved tracks live only in their drop-zone view —
+                        // they stay out of All Tracks, browse facets and playlists
+                        // until the user resolves their metadata.
+                        const all = data.items || [];
+                        libUnresolved = all.filter(it => it.unresolved);
+                        libItems = all.filter(it => !it.unresolved);
                         renderLibrary();
                     } catch (e) { showError('Failed to load library: ' + e.message); }
                 }
@@ -272,6 +278,7 @@
                         fieldText(it, f.field).toLowerCase().includes(String(f.value).toLowerCase()));
                 }
                 function sourceItems() {
+                    if (currentSource.type === 'unresolved') return libUnresolved;
                     if (currentSource.type === 'playlist') {
                         if (currentSource.kind === 'dynamic') {
                             return libItems.filter(it => passesChips(it, currentSource.filters));
@@ -446,6 +453,7 @@
                     const allView = currentSource.type === 'browseAll';
                     const browseMode = currentSource.type === 'all' || allView;
                     const isBrowse = currentSource.type === 'browse';
+                    const unresolvedView = currentSource.type === 'unresolved';
                     if (allView) browseField = currentSource.field || browseField;
                     if ($('libBrowse')) {
                         $('libBrowse').style.display = browseMode ? 'block' : 'none';
@@ -455,6 +463,10 @@
                     const toolbar = document.querySelector('.lib-toolbar');
                     if (toolbar) toolbar.style.display = allView ? 'none' : '';
                     $('libList').style.display = allView ? 'none' : '';
+                    if ($('libImportZone')) {
+                        $('libImportZone').style.display = unresolvedView ? 'flex' : 'none';
+                        if (unresolvedView) lucide.createIcons();
+                    }
                     if ($('libHero')) {
                         $('libHero').style.display = isBrowse ? 'flex' : 'none';
                         if (isBrowse) {
@@ -506,8 +518,9 @@
                         actions.append(kebab);
 
                         row.append(img, info, actions);
-                        // Row body click plays (edit is its own button now).
-                        row.addEventListener('click', () => libTogglePlay(it.id));
+                        // Row body click plays — except unresolved tracks, where
+                        // clicking opens the metadata editor (that IS resolving).
+                        row.addEventListener('click', () => unresolvedView ? openEdit(it.id) : libTogglePlay(it.id));
                         list.appendChild(row);
                     });
                     updateLibPlayIcons();
@@ -518,6 +531,7 @@
                 // ---- Playlists sidebar ----
                 const ICON_ALL = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg>';
                 const ICON_PL = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>';
+                const ICON_UNRES = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>';
 
                 async function loadPlaylists() {
                     try {
@@ -597,6 +611,13 @@
                     list.innerHTML = '';
                     list.appendChild(makeEntry('All Tracks', libItems.length, currentSource.type === 'all',
                         { icon: ICON_ALL, onClick: () => setSource({ type: 'all' }) }));
+                    // Drop-zone for discovered/imported tracks awaiting metadata;
+                    // only shown while there is something to resolve.
+                    if (libUnresolved.length || currentSource.type === 'unresolved') {
+                        list.appendChild(makeEntry('Unresolved', libUnresolved.length,
+                            currentSource.type === 'unresolved',
+                            { icon: ICON_UNRES, onClick: () => setSource({ type: 'unresolved' }) }));
+                    }
                     libPlaylists.forEach(p => {
                         const count = p.kind === 'dynamic'
                             ? libItems.filter(it => passesChips(it, p.filters)).length
@@ -615,10 +636,12 @@
                     const facetLabel = (BROWSE_FIELDS.find(([f]) => f === currentSource.field) || [])[1];
                     const active = currentSource.type === 'all'
                         ? 'All Tracks'
-                        : currentSource.type === 'browseAll'
-                            ? (facetLabel || 'Browse')
-                            : (libPlaylists.find(p => p.id === currentSource.id)?.name
-                               || currentSource.name || 'Playlist');
+                        : currentSource.type === 'unresolved'
+                            ? 'Unresolved'
+                            : currentSource.type === 'browseAll'
+                                ? (facetLabel || 'Browse')
+                                : (libPlaylists.find(p => p.id === currentSource.id)?.name
+                                   || currentSource.name || 'Playlist');
                     $('plToggle').innerHTML = `${active} <span>▾</span>`;
                 }
 
@@ -629,6 +652,9 @@
                             currentSource = { type: 'playlist', ...pl };
                             renderLibrary();
                         }).catch(() => { });
+                    } else if (src.type === 'unresolved') {
+                        currentSource = { type: 'unresolved' };
+                        renderLibrary();
                     } else {
                         currentSource = { type: 'all' };
                         renderLibrary();
@@ -1164,6 +1190,42 @@
                     loadLibrary();
                 });
                 $('libSearch').addEventListener('input', renderLibrary);
+
+                // Unresolved drop-zone: batch-import audio files straight into
+                // the library; they wait in this view until resolved via Edit.
+                async function importLibraryFiles(files) {
+                    const zone = $('libImportZone');
+                    const fd = new FormData();
+                    Array.from(files).forEach(f => fd.append('files', f));
+                    zone.classList.add('busy');
+                    try {
+                        const res = await fetch('/library/import', { method: 'POST', body: fd });
+                        if (!res.ok) throw new Error('import failed');
+                        const data = await res.json();
+                        const n = (data.imported || []).length, bad = (data.errors || []).length;
+                        showToast(`Imported ${n} file${n === 1 ? '' : 's'}${bad ? `, ${bad} failed` : ''}`);
+                        await loadLibrary();
+                    } catch (e) {
+                        showError('Import failed: ' + e.message);
+                    } finally {
+                        zone.classList.remove('busy');
+                    }
+                }
+                $('libImportZone').addEventListener('click', e => {
+                    // The input lives inside the zone: its programmatic .click()
+                    // bubbles back here — don't recurse.
+                    if (e.target !== $('libImportInput')) $('libImportInput').click();
+                });
+                $('libImportInput').addEventListener('change', e => {
+                    if (e.target.files.length) { importLibraryFiles(e.target.files); e.target.value = ''; }
+                });
+                $('libImportZone').addEventListener('dragover', e => { e.preventDefault(); $('libImportZone').classList.add('drag'); });
+                $('libImportZone').addEventListener('dragleave', () => $('libImportZone').classList.remove('drag'));
+                $('libImportZone').addEventListener('drop', e => {
+                    e.preventDefault();
+                    $('libImportZone').classList.remove('drag');
+                    if (e.dataTransfer.files.length) importLibraryFiles(e.dataTransfer.files);
+                });
 
                 // Filter / sort controls
                 $('libSortField').addEventListener('change', () => { libSort.field = $('libSortField').value; renderLibrary(); });

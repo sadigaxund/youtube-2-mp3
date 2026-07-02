@@ -138,6 +138,79 @@ def cleanup_stale_sidecars():
     db.prune_stale(META_DIR, PLAYLISTS_DIR)
 
 
+def compute_cache_plan() -> list:
+    """
+    Which tracks deserve a cached copy: favorites first, then most played,
+    then most recently played, greedy-filled into the byte budget. One policy
+    shared by the SSD hot tier and the client cache-plan endpoint.
+    """
+    if BROWSER_DOWNLOAD_MODE:
+        return []
+    items = [it for it in db.get_library()
+             if it.get("rel_path") and not it.get("unresolved")]
+    # Chained stable sorts: last tiebreak applied first.
+    items.sort(key=lambda it: it.get("last_played") or "", reverse=True)
+    items.sort(key=lambda it: it.get("play_count") or 0, reverse=True)
+    items.sort(key=lambda it: 0 if it.get("favorite") else 1)
+    plan, used = [], 0
+    for it in items:
+        try:
+            size = os.path.getsize(_abs(it["rel_path"]))
+        except OSError:
+            continue
+        if used + size > HOT_CACHE_BYTES:
+            continue   # too big for what's left; smaller tracks may still fit
+        plan.append({"id": it["id"], "track_id": it["track_id"],
+                     "rel_path": it["rel_path"], "size": size,
+                     "updated_at": it.get("updated_at")})
+        used += size
+    return plan
+
+
+def refresh_hot_cache() -> dict:
+    """Sync the SSD hot tier to the current plan: copy new/stale, evict dropped."""
+    if BROWSER_DOWNLOAD_MODE:
+        return {"tracks": 0, "used": 0, "budget": HOT_CACHE_BYTES}
+    plan = compute_cache_plan()
+    want = {}
+    for p in plan:
+        src = _abs(p["rel_path"])
+        want[p["track_id"] + os.path.splitext(src)[1]] = src
+    used = count = 0
+    with HOT_LOCK:
+        for fname in os.listdir(HOT_DIR):
+            if fname not in want:
+                try:
+                    os.remove(os.path.join(HOT_DIR, fname))
+                except OSError:
+                    pass
+        for fname, src in want.items():
+            dst = os.path.join(HOT_DIR, fname)
+            try:
+                s = os.stat(src)
+                if (not os.path.exists(dst) or os.path.getsize(dst) != s.st_size
+                        or os.path.getmtime(dst) < s.st_mtime):
+                    tmp = dst + ".tmp"
+                    shutil.copy2(src, tmp)
+                    os.replace(tmp, dst)
+                used += s.st_size
+                count += 1
+            except OSError as e:
+                log.warning("hot cache: failed to sync %s: %s", fname, e)
+    return {"tracks": count, "used": used, "budget": HOT_CACHE_BYTES}
+
+
+def _hot_cache_loop():
+    """Background refresh so the hot set follows listening habits."""
+    import time
+    while True:
+        time.sleep(1800)
+        try:
+            refresh_hot_cache()
+        except Exception as e:
+            log.warning("hot cache refresh failed: %s", e)
+
+
 def adopt_file(abs_path: str, rel_path: str) -> str:
     """
     Write an unresolved stub sidecar for an audio file that has no metadata
@@ -242,6 +315,15 @@ async def lifespan(app: FastAPI):
             log.info("Library index: %d track(s), %d playlist(s) loaded from sidecars.", n, p)
         except Exception as e:
             log.warning("Startup library rebuild failed: %s", e)
+        # SSD hot tier: initial sync + periodic refresh, off the request path.
+        def _hot_start():
+            try:
+                st = refresh_hot_cache()
+                log.info("Hot cache: %d track(s), %.1f MB.", st["tracks"], st["used"] / 1e6)
+            except Exception as e:
+                log.warning("Hot cache initial sync failed: %s", e)
+            _hot_cache_loop()
+        threading.Thread(target=_hot_start, daemon=True).start()
     yield
 
 
@@ -314,6 +396,16 @@ CACHE_ROOT = os.path.abspath(os.path.expanduser(ENV_CACHE_DIR))
 CACHE_DIR = os.path.join(CACHE_ROOT, "work")
 DB_PATH = os.path.join(CACHE_ROOT, "metadata.db")
 os.makedirs(CACHE_DIR, exist_ok=True)
+
+# SSD hot tier: copies of the most-listened tracks live under the cache root
+# so playback rarely touches the HDD save dir. Budget via HOT_CACHE_GB env.
+HOT_DIR = os.path.join(CACHE_ROOT, "hot")
+os.makedirs(HOT_DIR, exist_ok=True)
+try:
+    HOT_CACHE_BYTES = int(float(os.getenv("HOT_CACHE_GB", "2")) * (1024 ** 3))
+except ValueError:
+    HOT_CACHE_BYTES = 2 * 1024 ** 3
+HOT_LOCK = threading.Lock()
 
 db = AudioMetadataDB(DB_PATH)
 
@@ -1360,8 +1452,11 @@ def apply_metadata_edit(detail: dict, payload: dict) -> dict:
     old_rel = detail.get("rel_path")
     old_abs = _abs(old_rel) if old_rel else None
 
-    # Rename if the filename-deriving fields changed.
-    new_filename = build_filename(title, album, artist_str, composer, delimiter)
+    # Rename if the filename-deriving fields changed. Keep the file's real
+    # extension — build_filename defaults to .mp3, which would mislabel
+    # FLAC/WAV/imported files.
+    new_filename = build_filename(title, album, artist_str, composer, delimiter,
+                                  ext=os.path.splitext(old_rel or "")[1].lstrip(".") or "mp3")
     new_abs = old_abs
     if old_abs and os.path.basename(old_abs) != new_filename:
         new_abs = get_unique_path(DOWNLOAD_DIR, new_filename)
@@ -1690,9 +1785,62 @@ def library_audio(audio_id: int):
     path = _abs(detail["rel_path"])
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail="File missing")
+    # Prefer a fresh SSD hot-tier copy so playback leaves the HDD idle.
+    hot = os.path.join(HOT_DIR, (detail.get("track_id") or "") + os.path.splitext(path)[1])
+    try:
+        if (detail.get("track_id") and os.path.exists(hot)
+                and os.path.getsize(hot) == os.path.getsize(path)
+                and os.path.getmtime(hot) >= os.path.getmtime(path)):
+            path = hot
+    except OSError:
+        pass
     mime = {"flac": "audio/flac", "wav": "audio/wav", "mp3": "audio/mpeg"}.get(
         os.path.splitext(path)[1].lower().lstrip("."), "audio/mpeg")
     return FileResponse(path, media_type=mime)
+
+
+@app.get("/cache/status")
+def cache_status():
+    """Current on-disk state of the SSD hot tier."""
+    _require_library()
+    used = count = 0
+    for f in os.listdir(HOT_DIR):
+        try:
+            used += os.path.getsize(os.path.join(HOT_DIR, f))
+            count += 1
+        except OSError:
+            pass
+    return {"budget": HOT_CACHE_BYTES, "used": used, "tracks": count}
+
+
+@app.post("/cache/refresh")
+def cache_refresh():
+    """Recompute the plan and sync the SSD hot tier now."""
+    _require_library()
+    return refresh_hot_cache()
+
+
+@app.get("/cache-plan")
+def cache_plan():
+    """
+    Tracks a client should keep cached locally (service worker prefetch);
+    same favorites/most-played/recent policy as the server hot tier. The v
+    param carries updated_at so re-processed tracks get re-fetched.
+    """
+    _require_library()
+    return {"tracks": [
+        {"id": p["id"],
+         "url": f"/library/{p['id']}/audio?v={p['updated_at'] or ''}",
+         "size": p["size"]}
+        for p in compute_cache_plan()]}
+
+
+@app.get("/sw.js")
+def service_worker():
+    """Service worker must be served from the root path to get '/' scope."""
+    return FileResponse(os.path.join(STATIC_DIR, "sw.js"),
+                        media_type="application/javascript",
+                        headers={"Cache-Control": "no-cache"})
 
 
 @app.post("/preview-cache/clear")

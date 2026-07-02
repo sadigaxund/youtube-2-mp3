@@ -194,3 +194,23 @@
                 setTimeout(() => toast.classList.remove('show'), 6000);
             }
 
+
+            // --- PWA: offline audio cache -------------------------------------
+            // Registers the service worker (browsers only allow this on HTTPS or
+            // localhost — elsewhere this is a silent no-op) and asks it to
+            // prefetch the server's cache plan (favorites / most played / recent).
+            if ('serviceWorker' in navigator) {
+                (async () => {
+                    try {
+                        const reg = await navigator.serviceWorker.register('/sw.js');
+                        await navigator.serviceWorker.ready;
+                        const res = await fetch('/cache-plan');
+                        if (!res.ok) return;   // browser-download mode has no library
+                        const plan = await res.json();
+                        const sw = reg.active || navigator.serviceWorker.controller;
+                        if (sw && plan.tracks && plan.tracks.length) {
+                            sw.postMessage({ type: 'prefetch', urls: plan.tracks.map(t => t.url) });
+                        }
+                    } catch (e) { /* http origin or no library — cache stays off */ }
+                })();
+            }

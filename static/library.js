@@ -40,12 +40,15 @@
                 let createCoverBase64 = null;
                 let editingPlaylistId = null;           // set while editing an existing playlist
 
-                const itemById = id => libItems.find(x => x.id === id);
+                const itemById = id => libItems.find(x => x.id === id) || libUnresolved.find(x => x.id === id);
 
                 function playById(id) {
                     libPlayingId = id;
                     playStatsArmed = id;   // counted once playback crosses the threshold
-                    libAudio.src = `/library/${id}/audio`;
+                    // v=updated_at keys the service-worker cache: re-processed
+                    // tracks get a new URL, so stale cached audio is never served.
+                    const it = itemById(id);
+                    libAudio.src = `/library/${id}/audio?v=${encodeURIComponent((it && it.updated_at) || '')}`;
                     libAudio.play().catch(() => {});
                     $('nowPlaying').style.setProperty('--np-prog', '0%');
                     renderNowPlaying();
@@ -1166,7 +1169,7 @@
                 // Wiring (view navigation)
                 $('navDownload').addEventListener('click', () => showView('download'));
                 $('navLibrary').addEventListener('click', () => { showView('library'); currentSource = { type: 'all' }; loadLibrary(); loadPlaylists(); });
-                $('navSettings').addEventListener('click', () => showView('settings'));
+                $('navSettings').addEventListener('click', () => { showView('settings'); refreshStorageCard(); });
                 $('brandHome').addEventListener('click', () => showView('download'));
 
                 // Playlist create unit
@@ -1230,6 +1233,46 @@
                         loadLibrary();
                     } catch (e) { showError('Discovery failed'); }
                 }
+                // Settings → Storage & cache
+                function fmtBytes(n) {
+                    if (!n) return '0 MB';
+                    return n >= 1024 ** 3 ? (n / 1024 ** 3).toFixed(2) + ' GB'
+                        : Math.round(n / 1024 ** 2) + ' MB';
+                }
+                async function refreshStorageCard() {
+                    try {
+                        const s = await (await fetch('/cache/status')).json();
+                        $('hotStat').textContent =
+                            `${fmtBytes(s.used)} of ${fmtBytes(s.budget)} · ${s.tracks} track${s.tracks === 1 ? '' : 's'}`;
+                    } catch (e) { $('hotStat').textContent = 'unavailable'; }
+                    const swActive = 'serviceWorker' in navigator && navigator.serviceWorker.controller;
+                    $('devNote').style.display = swActive ? 'none' : 'block';
+                    if (swActive && navigator.storage && navigator.storage.estimate) {
+                        try {
+                            const est = await navigator.storage.estimate();
+                            $('devStat').textContent = `${fmtBytes(est.usage || 0)} used`;
+                        } catch (e) { $('devStat').textContent = '–'; }
+                    } else {
+                        $('devStat').textContent = 'inactive';
+                    }
+                }
+                $('hotRefreshBtn').addEventListener('click', async e => {
+                    setLoading(e.currentTarget, true);
+                    try {
+                        await fetch('/cache/refresh', { method: 'POST' });
+                        await refreshStorageCard();
+                        showToast('Hot cache refreshed');
+                    } catch (err) { showError('Refresh failed'); }
+                    finally { setLoading(e.currentTarget, false); }
+                });
+                $('devClearBtn').addEventListener('click', async () => {
+                    try {
+                        if (typeof caches !== 'undefined') await caches.delete('youtify-audio-v1');
+                        showToast('Device cache cleared');
+                        refreshStorageCard();
+                    } catch (e) { showError('Clear failed'); }
+                });
+
                 // Settings → Library maintenance
                 $('setDiscoverTop').addEventListener('click', () => runDiscover(false));
                 $('setDiscoverRec').addEventListener('click', () => runDiscover(true));

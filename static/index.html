@@ -6,6 +6,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Youtify</title>
     <link rel="icon" href="https://fav.farm/🎧" />
+    <link rel="manifest" href="/static/manifest.json">
+    <meta name="theme-color" content="#12121a">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -553,9 +555,22 @@
                         </div>
                     </div>
                 </div>
-                <div style="padding:1rem 1.1rem; border:1px solid var(--card-border); border-radius:12px; background:rgba(255,255,255,0.02); opacity:0.75;">
-                    <div style="font-weight:700; font-size:0.95rem; margin-bottom:0.2rem;">Storage &amp; cache <span style="font-size:0.7rem; font-weight:600; color:var(--text-dim); border:1px solid var(--card-border); border-radius:999px; padding:0.1rem 0.5rem; margin-left:0.4rem; vertical-align:middle;">planned</span></div>
-                    <div style="font-size:0.78rem; color:var(--text-dim);">Device track cache with budget &amp; pinning, SSD hot-tier management, and per-device cache monitoring will live here.</div>
+                <div style="padding:1rem 1.1rem; border:1px solid var(--card-border); border-radius:12px; background:rgba(255,255,255,0.03);">
+                    <div style="font-weight:700; font-size:0.95rem; margin-bottom:0.2rem;">Storage &amp; cache</div>
+                    <div style="font-size:0.78rem; color:var(--text-dim); margin-bottom:0.9rem;">Hot tracks (favorites, most played, recent) are mirrored to the server's SSD cache and prefetched into this device's browser cache, so the HDD stays idle during playback.</div>
+                    <div style="display:flex; flex-direction:column; gap:0.6rem;">
+                        <div style="display:flex; flex-wrap:wrap; align-items:center; gap:0.6rem;">
+                            <button id="hotRefreshBtn" type="button" style="width:auto; flex:0 0 auto; min-width:180px; margin:0; padding:0.45rem 0.8rem; font-size:0.8rem;">Refresh hot cache</button>
+                            <span style="font-size:0.78rem; color:var(--text-dim);">Server SSD tier: <span id="hotStat">–</span></span>
+                        </div>
+                        <div style="display:flex; flex-wrap:wrap; align-items:center; gap:0.6rem;">
+                            <button id="devClearBtn" type="button" style="width:auto; flex:0 0 auto; min-width:180px; margin:0; padding:0.45rem 0.8rem; font-size:0.8rem;">Clear device cache</button>
+                            <span style="font-size:0.78rem; color:var(--text-dim);">This device: <span id="devStat">–</span></span>
+                        </div>
+                        <div id="devNote" style="display:none; font-size:0.78rem; color:var(--text-dim); border:1px dashed var(--card-border); border-radius:8px; padding:0.5rem 0.7rem;">
+                            Device caching is inactive: browsers only allow it over HTTPS (or localhost). Serve Youtify via HTTPS — e.g. <code>tailscale serve</code> or a reverse proxy — to enable offline playback on this device.
+                        </div>
+                    </div>
                 </div>
             </div>
 

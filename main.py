@@ -1055,6 +1055,26 @@ def save_audio(
                 stats = prev.get("stats") or {"play_count": 0, "last_played": None}
                 favorite = bool(prev.get("favorite", False))
                 created_at = prev.get("created_at") or datetime.datetime.now().isoformat()
+                # A re-save REPLACES the track's audio: without this, the old
+                # file survives as an orphan (get_unique_path had dodged it
+                # with a _copyN name) that discovery later adopts as a bogus
+                # unresolved duplicate. Delete it, then reclaim the clean
+                # filename the _copyN suffix was avoiding.
+                prev_rel = prev.get("rel_path")
+                if prev_rel and os.path.normpath(prev_rel) != \
+                        os.path.normpath(os.path.relpath(final_path, DOWNLOAD_DIR)):
+                    try:
+                        old_abs = os.path.join(DOWNLOAD_DIR, prev_rel)
+                        if os.path.exists(old_abs):
+                            os.remove(old_abs)
+                        desired_abs = os.path.join(DOWNLOAD_DIR, filename_to_use)
+                        if final_path != desired_abs and not os.path.exists(desired_abs):
+                            os.rename(final_path, desired_abs)
+                            final_path = desired_abs
+                            output_path = desired_abs
+                            final_filename = filename_to_use
+                    except OSError as e:
+                        log.warning("re-save cleanup failed: %s", e)
                 sidecar = {
                     "schema_version": 2,
                     "track_id": track_id,

@@ -1144,7 +1144,14 @@
                     };
                     rd.readAsDataURL(f);
                 });
-                $('libBackBtn').addEventListener('click', () => showView('download'));
+                // "← Library" — always returns to the initial Library view (All
+                // Tracks), not wherever showView('download') happens to leave you
+                // (was a straight jump to the Downloads tab).
+                $('libBackBtn').addEventListener('click', () => {
+                    showView('library');
+                    currentSource = { type: 'all' };
+                    renderLibrary();
+                });
                 $('libEditBackBtn').addEventListener('click', () => showView('library'));
                 $('libRefreshBtn').addEventListener('click', async () => {
                     try { await fetch('/library/rebuild', { method: 'POST' }); } catch (e) {}

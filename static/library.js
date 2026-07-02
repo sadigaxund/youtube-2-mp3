@@ -8,10 +8,12 @@
                 let libEditCoverBase64 = null; // set if the user uploads a new cover
                 let libEditResetUrl = '';      // current saved cover (revert target)
 
+                // Centered lucide-style music glyph (the old path sat top-left).
                 const PLACEHOLDER = 'data:image/svg+xml;utf8,' + encodeURIComponent(
-                    '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48">' +
+                    '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">' +
                     '<rect width="48" height="48" fill="#222"/>' +
-                    '<path d="M19 14v11a3 3 0 1 1-2-2.83V12l12-2v9a3 3 0 1 1-2-2.83V8z" fill="#666"/></svg>');
+                    '<g transform="translate(6,6) scale(1.5)" fill="none" stroke="#666" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+                    '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></g></svg>');
                 const ICON_PLAY = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
                 const ICON_PAUSE = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>';
 

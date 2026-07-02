@@ -5,7 +5,7 @@
 <h1 align="center">Youtify</h1>
 
 <p align="center">
-  Pull high-quality audio from YouTube, shape it with effects, tag it, and save it — to your device or directly into a server media library.
+  Pull high-quality audio from YouTube, shape it with effects, tag it, and save it — to your device or straight into a self-hosted media library with playlists, smart caching, and offline playback.
 </p>
 
 <p align="center">
@@ -24,7 +24,7 @@
   </tr>
   <tr>
     <td width="50%"><img src="https://github.com/user-attachments/assets/e751268b-7594-41c4-8c37-8e216ed8b06a" alt="Effects & metadata editor"/><br/><sub><b>Effects & metadata editor</b></sub></td>
-    <td width="50%"><img src="https://github.com/user-attachments/assets/8a5f18b2-63d4-48d8-84c1-f0cc422b3cff" alt="Search key or URL"/><br/><sub><b>Effects & metadata editor</b></sub></td>
+    <td width="50%"><img src="https://github.com/user-attachments/assets/8a5f18b2-63d4-48d8-84c1-f0cc422b3cff" alt="Search key or URL"/><br/><sub><b>Search key or URL</b></sub></td>
   </tr>
 </table>
 
@@ -91,11 +91,20 @@
 - **Built-in player** — now-playing panel with cover art, seek bar, and prev/next that steps through the current filtered list.
 - **OS media integration** — publishes title, artist, album, and cover art to the OS: MPRIS on Linux desktops, lock-screen / notification controls on Android (full controls require HTTPS).
 - **Playlists** — manual or dynamic (filter-defined) playlists with cover art and drag-to-reorder; stored as JSON sidecars under `.youtify/playlists/`.
-- **Browse by Album / Artist / Genre / Year** — cover-art card grid with a hero view and Play All for each group.
-- **Filter & sort** — `field=value` filter chips across any metadata field (including custom tags), a sort selector, and full-text search.
+- **Browse by Album / Artist / Genre / Year** — cover-art card grid with a hero view and Play All for each group. Pin any **custom metadata key** (e.g. `Mood`) as an extra group via the **+** tab.
+- **Filter & sort** — `field=value` filter chips across any metadata field (including custom tags) with autocomplete, a sort selector, and full-text search.
+- **Batch edit** — find-match-alter across the whole library: rename or delete a custom key everywhere, or replace one value with another (per token, so `Sad` inside `Sad|Angry` works), with a live affected-count preview.
+- **Segment-aware tracks** — saving different cut ranges of one long video creates separate tracks that share a single archived original; re-saving the same range updates in place and keeps play stats.
+- **Discovery & unresolved drop-zone** — adopt audio files added to the save dir outside the app (Settings → *Scan for new files*), or drop files straight into the library. They wait in an **Unresolved** zone until you complete their metadata.
 - **Archive** — each save writes a source copy + JSON sidecar under `<save-dir>/.youtify/`, enabling re-render without re-download and index rebuild if the database is lost.
 - **SQLite index** — `metadata.db` lives in the cache directory and is rebuilt from sidecars on startup.
 - **Mobile-friendly** — Spotify-style layout: collapsible source picker, full-width track list, fixed bottom mini-bar that expands to a full sheet.
+
+### Storage & caching *(Server Save mode)*
+
+- **SSD hot tier** — your most-listened tracks (favorites, most played, most recent) are mirrored from the HDD library into the cache directory; playback serves the SSD copy, so the HDD stays idle. Budget set by `HOT_CACHE_GB` (default 2), synced automatically and on demand from **Settings**.
+- **Offline device cache (PWA)** — when served over HTTPS (or localhost), a service worker caches every played track on the device and prefetches the hot set, enabling instant, offline playback. Install Youtify to the Android homescreen via the browser's *Add to Home screen*.
+- **Settings view** — hot-tier usage & refresh, device cache usage & clear, plus library maintenance (scan for new files, rebuild index).
 
 ### Sources & export
 
@@ -165,6 +174,7 @@ Server starts at `http://localhost:8000`.
 | `--save-dir` | `SAVE_DIRECTORY` | *(unset — browser download)* | Media library root; `.youtify/` archive is written here |
 | `--cache-dir` | `CACHE_DIRECTORY` | `~/.cache/youtify` | Working cache (previews, downloads) + `metadata.db` |
 | `--turbo` | `TURBO_PREVIEW` | *off* | Enable Turbo Render by default |
+| — | `HOT_CACHE_GB` | `2` | SSD hot-tier budget for most-listened tracks (in the cache dir) |
 | — | `LOG_LEVEL` | `INFO` | Log verbosity |
 
 ---
@@ -216,7 +226,10 @@ docker build -t sakhund/youtify:latest .
 2. Set a time range, pick your effects, and press **play** to preview. Each combination is saved as an A/B chip — click any chip to hear it instantly, then load it back into the controls with one click.
 3. Edit metadata and cover art.
 4. Hit **Download** — the file streams to your browser, or saves to the server in Server Save mode.
-5. In Server Save mode, open **Library** to play saved tracks (with OS lock-screen / desktop controls), organize playlists, filter and sort, edit metadata in place, reprocess effects, or delete.
+5. In Server Save mode, open **Library** to play saved tracks (with OS lock-screen / desktop controls), organize playlists, browse by album/artist/genre/year or any pinned custom key, filter and sort, batch-edit metadata, reprocess effects, or delete.
+6. Open **Settings** for storage & cache (SSD hot tier, device cache) and library maintenance (scan for new files, rebuild index).
+
+> **Tip:** serve Youtify over HTTPS (e.g. `tailscale serve`, or a reverse proxy with a certificate) to unlock the full mobile experience — lock-screen media controls, offline device caching, and homescreen install.
 
 ---
 

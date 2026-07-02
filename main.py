@@ -517,6 +517,9 @@ def playlist_sidecar_path(pid: str) -> str:
 # index.json mapping slug -> original value (the frontend never computes slugs).
 
 FACET_FIELDS = ("album", "artist", "genre", "year")
+# Custom metadata keys can be pinned as browse facets; their covers live in
+# a directory named after the key, so the name must stay path-safe.
+_FACET_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9 _.\-]{0,39}$")
 
 
 def _facet_slug(value: str) -> str:
@@ -526,8 +529,8 @@ def _facet_slug(value: str) -> str:
 
 
 def _facet_dir(field: str) -> str:
-    if field not in FACET_FIELDS:
-        raise HTTPException(status_code=422, detail=f"field must be one of {FACET_FIELDS}")
+    if field not in FACET_FIELDS and not _FACET_NAME_RE.fullmatch(field):
+        raise HTTPException(status_code=422, detail="invalid facet field name")
     d = os.path.join(FACETS_DIR, field)
     os.makedirs(d, exist_ok=True)
     return d
@@ -1853,7 +1856,11 @@ def playlist_cover(pid: str):
 def facets_list():
     """Which facet values have a custom cover: {field: [value, ...]}."""
     _require_library()
-    return {f: sorted(_facet_index_read(f).values()) for f in FACET_FIELDS}
+    fields = set(FACET_FIELDS)
+    if FACETS_DIR and os.path.isdir(FACETS_DIR):
+        fields.update(d for d in os.listdir(FACETS_DIR)
+                      if os.path.isdir(os.path.join(FACETS_DIR, d)))
+    return {f: sorted(_facet_index_read(f).values()) for f in sorted(fields)}
 
 
 @app.get("/facets/{field}/{value}/cover")

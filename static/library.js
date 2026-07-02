@@ -294,7 +294,7 @@
                             if (field === 'genre') return (it.genres || []).includes(value);
                             if (field === 'album') return (it.albums && it.albums.length ? it.albums : (it.album ? [it.album] : [])).includes(value);
                             if (field === 'year') return String(it.year) === value;
-                            return false;
+                            return customTokens(it, field).includes(value);   // pinned custom key
                         });
                     }
                     return libItems;
@@ -302,6 +302,21 @@
 
                 // --- Browse-by facets (cover-art card grid) ---
                 const BROWSE_FIELDS = [['album', 'Albums'], ['artist', 'Artists'], ['genre', 'Genres'], ['year', 'Years']];
+                // User-pinned custom metadata keys shown as extra browse tabs.
+                let browsePins = [];
+                try { browsePins = JSON.parse(localStorage.getItem('youtify.browsePins') || '[]'); } catch (e) { }
+                function saveBrowsePins() {
+                    try { localStorage.setItem('youtify.browsePins', JSON.stringify(browsePins)); } catch (e) { }
+                }
+                function browseFields() {
+                    return [...BROWSE_FIELDS, ...browsePins.map(k => [k, k])];
+                }
+                function customTokens(it, field) {
+                    const cf = it.custom_fields || {};
+                    const hit = Object.keys(cf).find(k => k.toLowerCase() === field.toLowerCase());
+                    return hit == null ? [] :
+                        String(cf[hit] || '').split(/[|,;]/).map(t => t.trim()).filter(Boolean);
+                }
 
                 async function loadFacets() {
                     try {
@@ -337,7 +352,7 @@
                         else if (field === 'genre') vals = it.genres || [];
                         else if (field === 'album') vals = (it.albums && it.albums.length) ? it.albums : (it.album ? [it.album] : []);
                         else if (field === 'year') vals = (it.year != null && it.year !== '') ? [String(it.year)] : [];
-                        else vals = [];
+                        else vals = customTokens(it, field);   // pinned custom key
                         vals.forEach(v => {
                             v = String(v).trim(); if (!v) return;
                             const e = map.get(v) || { value: v, count: 0, coverId: it.id, updated: it.updated_at };
@@ -350,7 +365,7 @@
                 function renderBrowse() {
                     const allView = currentSource.type === 'browseAll';
                     const tabs = $('browseTabs'); tabs.innerHTML = '';
-                    BROWSE_FIELDS.forEach(([f, label]) => {
+                    browseFields().forEach(([f, label]) => {
                         const b = document.createElement('button');
                         b.type = 'button'; b.className = 'browse-tab' + (f === browseField ? ' active' : '');
                         b.textContent = label;
@@ -361,6 +376,30 @@
                         });
                         tabs.appendChild(b);
                     });
+                    // "+" — pin/unpin custom metadata keys as extra group tabs.
+                    const plus = document.createElement('button');
+                    plus.type = 'button'; plus.className = 'browse-tab';
+                    plus.textContent = '+'; plus.title = 'Pin a metadata key as a group';
+                    plus.addEventListener('click', () => {
+                        const keys = customKeys();
+                        if (!keys.length && !browsePins.length) {
+                            showError('No custom keys in the library yet.');
+                            return;
+                        }
+                        // Keep stale pins listed so they can be unpinned.
+                        const opts = [...new Set([...keys, ...browsePins])];
+                        openMenu(plus, opts.map(k => ({
+                            label: (browsePins.includes(k) ? '✓ ' : '') + k,
+                            fn: () => {
+                                browsePins = browsePins.includes(k)
+                                    ? browsePins.filter(x => x !== k) : [...browsePins, k];
+                                saveBrowsePins();
+                                if (!browseFields().some(([f]) => f === browseField)) browseField = 'album';
+                                renderBrowse();
+                            },
+                        })));
+                    });
+                    tabs.appendChild(plus);
                     const grid = $('browseGrid'); grid.innerHTML = '';
                     const circular = browseField === 'artist';
                     const all = browseValuesFor(browseField);
@@ -470,7 +509,7 @@
                     if ($('libHero')) {
                         $('libHero').style.display = isBrowse ? 'flex' : 'none';
                         if (isBrowse) {
-                            $('libHeroKind').textContent = ({ album: 'Album', artist: 'Artist', genre: 'Genre', year: 'Year' })[currentSource.field] || '';
+                            $('libHeroKind').textContent = ({ album: 'Album', artist: 'Artist', genre: 'Genre', year: 'Year' })[currentSource.field] || currentSource.field || '';
                             $('libHeroName').textContent = currentSource.name;
                             $('libHeroCount').textContent = visibleItems.length + ' track' + (visibleItems.length === 1 ? '' : 's');
                             const hc = $('libHeroCover');
@@ -633,7 +672,7 @@
                         }));
                     });
                     // Mobile picker label = current source name.
-                    const facetLabel = (BROWSE_FIELDS.find(([f]) => f === currentSource.field) || [])[1];
+                    const facetLabel = (browseFields().find(([f]) => f === currentSource.field) || [])[1];
                     const active = currentSource.type === 'all'
                         ? 'All Tracks'
                         : currentSource.type === 'unresolved'

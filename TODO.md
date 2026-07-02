@@ -5,7 +5,7 @@
 - [ ] MPRS controls on mobile did not work properly, either general issue or samsung s22 specific, not sure
 - [ ] (UNSURE) A metadata search, implement some API's or google-search???  + maybe LLM usage to standardize and clean up fetched data?
 - [x] add auto completion to the filter fields too. see if more
-- [ ] Maybe extended view where you can group by metadata, similar to Albums or Artists. But probably best to let user pin desired metadata group otherwise might be overwhelming
+- [x] Maybe extended view where you can group by metadata, similar to Albums or Artists. But probably best to let user pin desired metadata group otherwise might be overwhelming
 - [x] Some way of editing key's directly, not manually trying to find which song has them. Some kind of batch update. Maybe similar batch update towards values. Something like find match and alter them. Maybe previous question would be enough
 - [x] The resolved bug appears again within edit metadata menu, in Artist input field, where it annoying pops up suggestions even when it has no focus. might be more fields
 - [x] "<- Library" button throws me back to downloads tab view, not initial library view

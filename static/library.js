@@ -215,8 +215,10 @@
                     $('downloadView').style.display = name === 'download' ? 'block' : 'none';
                     $('libraryView').style.display = name === 'library' ? 'block' : 'none';
                     $('libEditView').style.display = name === 'libEdit' ? 'block' : 'none';
+                    $('settingsView').style.display = name === 'settings' ? 'block' : 'none';
                     $('navDownload').classList.toggle('active', name === 'download');
                     $('navLibrary').classList.toggle('active', name === 'library' || name === 'libEdit');
+                    $('navSettings').classList.toggle('active', name === 'settings');
                     // Library view scrolls inside .content (mobile) so the URL bar
                     // stays put and the fixed mini-bar doesn't jitter.
                     document.body.classList.toggle('lib-locked', name === 'library');
@@ -1164,6 +1166,7 @@
                 // Wiring (view navigation)
                 $('navDownload').addEventListener('click', () => showView('download'));
                 $('navLibrary').addEventListener('click', () => { showView('library'); currentSource = { type: 'all' }; loadLibrary(); loadPlaylists(); });
+                $('navSettings').addEventListener('click', () => showView('settings'));
                 $('brandHome').addEventListener('click', () => showView('download'));
 
                 // Playlist create unit
@@ -1227,20 +1230,18 @@
                         loadLibrary();
                     } catch (e) { showError('Discovery failed'); }
                 }
-                // Maintenance menu (sidebar): discovery + index rebuild live here
-                // until a dedicated Storage view exists.
-                $('plMaintBtn').addEventListener('click', e => {
-                    e.stopPropagation();
-                    openMenu(e.currentTarget, [
-                        { label: 'Scan for new files', fn: () => runDiscover(false) },
-                        { label: 'Scan incl. subfolders', fn: () => runDiscover(true) },
-                        {
-                            label: 'Rebuild index', fn: async () => {
-                                try { await fetch('/library/rebuild', { method: 'POST' }); } catch (e) { }
-                                loadLibrary();
-                            },
-                        },
-                    ]);
+                // Settings → Library maintenance
+                $('setDiscoverTop').addEventListener('click', () => runDiscover(false));
+                $('setDiscoverRec').addEventListener('click', () => runDiscover(true));
+                $('setRebuild').addEventListener('click', async e => {
+                    setLoading(e.currentTarget, true);
+                    try {
+                        const res = await fetch('/library/rebuild', { method: 'POST' });
+                        const data = await res.json();
+                        showToast(`Re-indexed ${data.indexed} track${data.indexed === 1 ? '' : 's'}`);
+                        loadLibrary();
+                    } catch (err) { showError('Rebuild failed'); }
+                    finally { setLoading(e.currentTarget, false); }
                 });
                 $('libSearch').addEventListener('input', renderLibrary);
 
@@ -1449,6 +1450,7 @@
                     if (cfg && cfg.browser_download_mode === false) {
                         window.serverSaveMode = true;
                         $('navLibrary').style.display = '';
+                        $('navSettings').style.display = '';
                         // Copy-from needs a library to copy from.
                         const cm = document.getElementById('copyMetaBtn');
                         if (cm) cm.style.display = '';

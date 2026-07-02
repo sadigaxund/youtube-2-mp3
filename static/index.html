@@ -22,6 +22,7 @@
             <nav>
                 <button id="navDownload" type="button" class="nav-link active">Download</button>
                 <button id="navLibrary" type="button" class="nav-link" style="display:none;">Library</button>
+                <button id="navSettings" type="button" class="nav-link" style="display:none;">Settings</button>
             </nav>
         </div>
     </header>
@@ -414,7 +415,6 @@
                         <button id="plToggle" type="button" class="pl-toggle">All Tracks <span>▾</span></button>
                         <div id="plList" class="pl-list"></div>
                         <button id="plNewBtn" type="button" class="pl-new">+ New playlist</button>
-                        <button id="plMaintBtn" type="button" class="pl-new" style="opacity:0.65;">⚙ Maintenance</button>
                         <div id="plCreate" class="pl-create" style="display:none;">
                             <div id="plCreateTitle" style="font-size:0.8rem; font-weight:700; color:var(--text-dim);">New playlist</div>
                             <input type="text" id="plName" placeholder="Playlist name">
@@ -490,6 +490,8 @@
                                     </select>
                                     <button id="libSortDir" type="button" class="lib-ctl-btn lib-ctl-icon" title="Sort direction">↓</button>
                                     <button id="libFavToggle" type="button" class="lib-ctl-btn lib-ctl-icon lib-fav-toggle" title="Show favorites only">♥</button>
+                                </div>
+                                <div class="lib-ctl" style="margin-left:auto;">
                                     <button id="libBatchBtn" type="button" class="lib-ctl-btn" title="Batch edit metadata (find, match, alter)">Batch edit</button>
                                 </div>
                             </div>
@@ -528,6 +530,32 @@
                             </div>
                         </div>
                     </aside>
+                </div>
+            </div>
+
+            <!-- ===================== Settings view ===================== -->
+            <div id="settingsView" style="display:none;">
+                <div style="padding:1rem 1.1rem; margin-bottom:0.9rem; border:1px solid var(--card-border); border-radius:12px; background:rgba(255,255,255,0.03);">
+                    <div style="font-weight:700; font-size:0.95rem; margin-bottom:0.2rem;">Library maintenance</div>
+                    <div style="font-size:0.78rem; color:var(--text-dim); margin-bottom:0.9rem;">Index repair and adoption of files added outside the app. Nothing here touches audio data.</div>
+                    <div style="display:flex; flex-direction:column; gap:0.6rem;">
+                        <div style="display:flex; flex-wrap:wrap; align-items:center; gap:0.6rem;">
+                            <button id="setDiscoverTop" type="button" style="width:auto; flex:0 0 auto; min-width:180px; margin:0; padding:0.45rem 0.8rem; font-size:0.8rem;">Scan for new files</button>
+                            <span style="font-size:0.78rem; color:var(--text-dim);">Adopt untracked audio files in the save folder (top level only) as unresolved tracks.</span>
+                        </div>
+                        <div style="display:flex; flex-wrap:wrap; align-items:center; gap:0.6rem;">
+                            <button id="setDiscoverRec" type="button" style="width:auto; flex:0 0 auto; min-width:180px; margin:0; padding:0.45rem 0.8rem; font-size:0.8rem;">Scan incl. subfolders</button>
+                            <span style="font-size:0.78rem; color:var(--text-dim);">Same, but recursive — sweeps every folder under the save dir.</span>
+                        </div>
+                        <div style="display:flex; flex-wrap:wrap; align-items:center; gap:0.6rem;">
+                            <button id="setRebuild" type="button" style="width:auto; flex:0 0 auto; min-width:180px; margin:0; padding:0.45rem 0.8rem; font-size:0.8rem;">Rebuild index</button>
+                            <span style="font-size:0.78rem; color:var(--text-dim);">Re-derive the database from the metadata sidecars; purges stale entries. Also runs on every server start.</span>
+                        </div>
+                    </div>
+                </div>
+                <div style="padding:1rem 1.1rem; border:1px solid var(--card-border); border-radius:12px; background:rgba(255,255,255,0.02); opacity:0.75;">
+                    <div style="font-weight:700; font-size:0.95rem; margin-bottom:0.2rem;">Storage &amp; cache <span style="font-size:0.7rem; font-weight:600; color:var(--text-dim); border:1px solid var(--card-border); border-radius:999px; padding:0.1rem 0.5rem; margin-left:0.4rem; vertical-align:middle;">planned</span></div>
+                    <div style="font-size:0.78rem; color:var(--text-dim);">Device track cache with budget &amp; pinning, SSD hot-tier management, and per-device cache monitoring will live here.</div>
                 </div>
             </div>
 

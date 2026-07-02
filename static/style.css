@@ -1806,6 +1806,13 @@
             min-width: 80px;
         }
 
+        /* The filter value input is wrapped by the autocomplete's .suggest-wrap;
+           the wrapper must take over the flexing or the row collapses unevenly. */
+        .lib-ctl.filter .suggest-wrap {
+            flex: 1;
+            min-width: 120px;
+        }
+
         .lib-ctl-btn {
             width: auto;
             cursor: pointer;

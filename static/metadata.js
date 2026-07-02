@@ -193,14 +193,16 @@
                 render();
                 return {
                     wrap,
-                    // Commit any text still sitting in the input before reading:
-                    // the blur handler runs on a 150ms delay (so clicking a
-                    // suggestion wins), and a fast paste→Save could otherwise
-                    // read the chips before the pending value lands.
+                    // Include any text still sitting in the input — WITHOUT
+                    // committing it (getValues runs on every keystroke via the
+                    // filename preview; committing here turned each keypress
+                    // into a chip). The blur handler does the visible commit;
+                    // this just guarantees a fast paste→Save can't lose it.
                     getValues: () => {
                         const pending = input.value.trim();
-                        if (pending && !values.includes(pending)) add(pending);
-                        return values.slice();
+                        const vals = values.slice();
+                        if (pending && !vals.includes(pending)) vals.push(pending);
+                        return vals;
                     },
                     setValues: (vals) => { values = (vals || []).slice(); render(); fire(); },
                     input,

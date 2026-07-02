@@ -1216,19 +1216,7 @@
                     };
                     rd.readAsDataURL(f);
                 });
-                // "← Library" — always returns to the initial Library view (All
-                // Tracks), not wherever showView('download') happens to leave you
-                // (was a straight jump to the Downloads tab).
-                $('libBackBtn').addEventListener('click', () => {
-                    showView('library');
-                    currentSource = { type: 'all' };
-                    renderLibrary();
-                });
                 $('libEditBackBtn').addEventListener('click', () => showView('library'));
-                $('libRefreshBtn').addEventListener('click', async () => {
-                    try { await fetch('/library/rebuild', { method: 'POST' }); } catch (e) {}
-                    loadLibrary();
-                });
                 // Manual discovery of unindexed files: top-level scan by
                 // default, recursive as an explicit choice.
                 async function runDiscover(recursive) {
@@ -1239,10 +1227,19 @@
                         loadLibrary();
                     } catch (e) { showError('Discovery failed'); }
                 }
-                $('libDiscoverBtn').addEventListener('click', e => {
+                // Maintenance menu (sidebar): discovery + index rebuild live here
+                // until a dedicated Storage view exists.
+                $('plMaintBtn').addEventListener('click', e => {
+                    e.stopPropagation();
                     openMenu(e.currentTarget, [
-                        { label: 'Scan library folder', fn: () => runDiscover(false) },
-                        { label: 'Scan with subfolders', fn: () => runDiscover(true) },
+                        { label: 'Scan for new files', fn: () => runDiscover(false) },
+                        { label: 'Scan incl. subfolders', fn: () => runDiscover(true) },
+                        {
+                            label: 'Rebuild index', fn: async () => {
+                                try { await fetch('/library/rebuild', { method: 'POST' }); } catch (e) { }
+                                loadLibrary();
+                            },
+                        },
                     ]);
                 });
                 $('libSearch').addEventListener('input', renderLibrary);
@@ -1329,10 +1326,13 @@
                     return n;
                 }
                 $('libBatchBtn').addEventListener('click', () => {
-                    const p = $('libBatchPanel');
-                    const show = p.style.display === 'none';
-                    p.style.display = show ? 'block' : 'none';
-                    if (show) refreshBatchPanel();
+                    $('libBatchOverlay').style.display = 'flex';
+                    refreshBatchPanel();
+                });
+                $('batchClose').addEventListener('click', () => { $('libBatchOverlay').style.display = 'none'; });
+                // Backdrop click closes; clicks inside the panel don't bubble out.
+                $('libBatchOverlay').addEventListener('click', e => {
+                    if (e.target === $('libBatchOverlay')) $('libBatchOverlay').style.display = 'none';
                 });
                 $('batchOp').addEventListener('change', refreshBatchPanel);
                 $('batchField').addEventListener('change', updateBatchPreview);

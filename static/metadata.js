@@ -55,6 +55,10 @@
                         const res = await fetch(`/suggestions?field=${encodeURIComponent(field)}&q=${encodeURIComponent(input.value)}`);
                         if (res.ok) list = (await res.json()).suggestions || [];
                     } catch (e) { /* offline / browser-download mode -> presets only */ }
+                    // The fetch is async — by the time it resolves, focus may have
+                    // moved elsewhere (blur, tab switch, or a programmatic field
+                    // populate). Don't pop a dropdown on an unfocused input.
+                    if (document.activeElement !== input) { hide(); return; }
                     // Custom-tag keys: blend in the preset keys as a guide for what
                     // can go there (library-sourced keys first).
                     if (field === '__keys__') list = mergeKeySuggestions(list, input.value);
@@ -160,6 +164,11 @@
                     try {
                         const res = await fetch(`/suggestions?field=${encodeURIComponent(field)}&q=${encodeURIComponent(input.value)}`);
                         if (!res.ok) { hideDD(); return; }
+                        // The fetch is async — by the time it resolves, focus may
+                        // have moved elsewhere (blur, tab switch, or a programmatic
+                        // field populate, e.g. opening the edit-metadata menu).
+                        // Don't pop a dropdown on an unfocused input.
+                        if (document.activeElement !== input) { hideDD(); return; }
                         const cur = input.value.trim().toLowerCase();
                         const list = ((await res.json()).suggestions || [])
                             .filter(v => !values.includes(v) && String(v).toLowerCase() !== cur);

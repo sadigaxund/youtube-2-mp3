@@ -189,11 +189,13 @@ def adopt_file(abs_path: str, rel_path: str) -> str:
     return track_id
 
 
-def discover_unindexed() -> int:
+def discover_unindexed(recursive: bool = False) -> int:
     """
-    Adopt audio files under the save dir that no sidecar references (runs as
-    part of every rebuild). Each becomes an unresolved stub track; nothing is
-    moved or modified on disk.
+    Adopt audio files in the save dir that no sidecar references. Manual-only
+    (triggered by the Discover button, never by rebuild/startup) so stray
+    files in nested folders aren't pulled in unasked: default scans only the
+    save dir's top level; recursive scanning is opt-in. Each hit becomes an
+    unresolved stub track; nothing is moved or modified on disk.
     """
     if BROWSER_DOWNLOAD_MODE:
         return 0
@@ -209,7 +211,7 @@ def discover_unindexed() -> int:
     count = 0
     for root, dirs, files in os.walk(DOWNLOAD_DIR):
         # .youtify holds the archive/sidecars/covers, not library audio.
-        dirs[:] = [d for d in dirs if d != ".youtify"]
+        dirs[:] = [d for d in dirs if d != ".youtify"] if recursive else []
         for fname in files:
             if os.path.splitext(fname)[1].lower().lstrip(".") not in ALLOWED_UPLOAD_EXTS:
                 continue
@@ -218,7 +220,8 @@ def discover_unindexed() -> int:
             if rel in referenced:
                 continue
             try:
-                adopt_file(abs_path, rel)
+                track_id = adopt_file(abs_path, rel)
+                db.upsert_from_sidecar(read_sidecar(track_id), f"{track_id}.json")
                 count += 1
             except Exception as e:
                 log.warning("discovery: failed to adopt %s: %s", rel, e)
@@ -234,7 +237,6 @@ async def lifespan(app: FastAPI):
     if not BROWSER_DOWNLOAD_MODE:
         try:
             cleanup_stale_sidecars()
-            discover_unindexed()
             n = db.rebuild_from_sidecars(META_DIR, DOWNLOAD_DIR)
             p = db.rebuild_playlists_from_sidecars(PLAYLISTS_DIR)
             log.info("Library index: %d track(s), %d playlist(s) loaded from sidecars.", n, p)
@@ -264,6 +266,17 @@ os.makedirs(STATIC_DIR, exist_ok=True)
 
 # Serve static files (CSS, JS, assets)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+# Without explicit cache headers browsers heuristically cache the JS/CSS for
+# days (10% of file age), so UI fixes don't reach clients until a hard reload.
+# no-cache = revalidate every load; unchanged files still answer as cheap 304s.
+@app.middleware("http")
+async def static_revalidate(request, call_next):
+    response = await call_next(request)
+    if request.url.path == "/" or request.url.path.startswith("/static"):
+        response.headers.setdefault("Cache-Control", "no-cache")
+    return response
 
 # Store progress in-memory (simple session-based)
 # In a production app, use Redis or similar
@@ -1246,16 +1259,23 @@ def library_detail(audio_id: int):
 
 @app.post("/library/rebuild")
 def library_rebuild():
-    """
-    Re-index the DB from the on-disk sidecars: stale entries are purged first,
-    then unindexed audio files in the save dir are adopted as unresolved.
-    """
+    """Re-index the DB from the on-disk sidecars (stale entries are purged first)."""
     _require_library()
     cleanup_stale_sidecars()
-    discovered = discover_unindexed()
     n = db.rebuild_from_sidecars(META_DIR, DOWNLOAD_DIR)
     db.rebuild_playlists_from_sidecars(PLAYLISTS_DIR)
-    return {"indexed": n, "discovered": discovered}
+    return {"indexed": n}
+
+
+@app.post("/library/discover")
+def library_discover(recursive: bool = Query(False)):
+    """
+    Manually adopt unindexed audio files in the save dir as unresolved tracks.
+    Default looks only at the save dir's top level; recursive is opt-in so
+    nested folders aren't swept up unasked.
+    """
+    _require_library()
+    return {"discovered": discover_unindexed(recursive=recursive)}
 
 
 @app.post("/library/import")

@@ -1229,6 +1229,22 @@
                     try { await fetch('/library/rebuild', { method: 'POST' }); } catch (e) {}
                     loadLibrary();
                 });
+                // Manual discovery of unindexed files: top-level scan by
+                // default, recursive as an explicit choice.
+                async function runDiscover(recursive) {
+                    try {
+                        const res = await fetch('/library/discover?recursive=' + recursive, { method: 'POST' });
+                        const data = await res.json();
+                        showToast(`Discovered ${data.discovered} file${data.discovered === 1 ? '' : 's'}`);
+                        loadLibrary();
+                    } catch (e) { showError('Discovery failed'); }
+                }
+                $('libDiscoverBtn').addEventListener('click', e => {
+                    openMenu(e.currentTarget, [
+                        { label: 'Scan library folder', fn: () => runDiscover(false) },
+                        { label: 'Scan with subfolders', fn: () => runDiscover(true) },
+                    ]);
+                });
                 $('libSearch').addEventListener('input', renderLibrary);
 
                 // Unresolved drop-zone: batch-import audio files straight into

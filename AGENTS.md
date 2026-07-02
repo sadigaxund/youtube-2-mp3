@@ -43,7 +43,7 @@ Functions freely cross-reference across files without import/export.
 
 ## Compatibility policy
 
-- Sidecars (`.youtify/meta/*.json`) are the source of truth; `metadata.db` is a disposable index rebuilt from them on startup. Tracks are keyed by `track_id` (= `youtube_id`, or `youtube_id__<hash8>` for a cut segment, or `loc<hash12>` for discovered/imported local files); rebuild also adopts unindexed audio files in the save dir as `unresolved` stub sidecars.
+- Sidecars (`.youtify/meta/*.json`) are the source of truth; `metadata.db` is a disposable index rebuilt from them on startup. Tracks are keyed by `track_id` (= `youtube_id`, or `youtube_id__<hash8>` for a cut segment, or `loc<hash12>` for discovered/imported local files). Discovery of unindexed audio files is manual-only (`POST /library/discover`, top-level by default, `?recursive=true` opt-in) and adopts hits as `unresolved` stub sidecars.
 - New sidecar keys are **additive** and read with `.get(...)` defaults; DB migrations are additive `try: ALTER TABLE` statements. Updates must never require re-downloading tracks.
 - A breaking sidecar change bumps `schema_version` and ships a read-time migration.
 

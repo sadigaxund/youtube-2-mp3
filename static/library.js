@@ -170,6 +170,7 @@
                 libAudio.addEventListener('play', () => {
                     updateLibPlayIcons();
                     if ('mediaSession' in navigator) {
+                        window.msOwner = 'library';   // see preview.js — stops cross-player clobbering
                         navigator.mediaSession.playbackState = 'playing';
                         // Firefox/Zen only reliably pick up metadata + handlers when
                         // (re)applied after a user-gesture-initiated play.
@@ -178,7 +179,7 @@
                         bindMediaHandlers();
                     }
                 });
-                libAudio.addEventListener('pause', () => { updateLibPlayIcons(); if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused'; });
+                libAudio.addEventListener('pause', () => { updateLibPlayIcons(); if ('mediaSession' in navigator && window.msOwner === 'library') navigator.mediaSession.playbackState = 'paused'; });
                 libAudio.addEventListener('ended', () => {
                     if (sleepMode === 'eot') {
                         // Sleep at end of track: stop here (the queue is kept).

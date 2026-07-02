@@ -1,8 +1,8 @@
 - [ ] Spotify as a source — DRM means actual audio would come from YouTube matched via Spotify metadata (spotdl-style). Decide if wanted.
 - [ ] Universal scraper — yt-dlp already supports 1000+ sites; main work is relaxing the YouTube-only URL whitelist (`youtube_downloader.py` `validate_youtube_url`) and dropping the 11-char ID assumption.
 - [ ] A cache and sync feature. Where you can define your storage base like a homelab HDD that you mainly save all the sidecars + big files, and a way to cache only necessary files into a another client's local storage, to improve the Lifespan of the HDD + faster playbacks
-- [ ] See if multiple parallel users can use it
-- [ ] MPRS controls on mobile did not work properly, either general issue or samsung s22 specific, not sure
+- [x] See if multiple parallel users can use it — audited: WAL on, per-request connections, atomic sidecar writes; added a lock around play-stat/favorite sidecar read-modify-writes. Multiple clients on one library work; multi-account (auth, per-user libraries) is a separate feature if ever wanted.
+- [x] MPRS controls on mobile did not work properly, either general issue or samsung s22 specific, not sure — found+fixed cross-player MediaSession clobbering (preview pause was overwriting library playbackState); needs confirmation on the S22.
 - [ ] (UNSURE) A metadata search, implement some API's or google-search???  + maybe LLM usage to standardize and clean up fetched data?
 - [x] add auto completion to the filter fields too. see if more
 - [x] Maybe extended view where you can group by metadata, similar to Albums or Artists. But probably best to let user pin desired metadata group otherwise might be overwhelming

@@ -483,6 +483,12 @@ def track_id_for(video_id: str, start_time: Optional[float] = None,
     return f"{video_id}__{hashlib.sha1(seg.encode()).hexdigest()[:8]}"
 
 
+# Serializes sidecar read-modify-write cycles (play stats, favorite) so two
+# clients hitting the same track concurrently can't drop each other's update.
+# Writes themselves are already atomic (write-tmp + os.replace).
+SIDECAR_LOCK = threading.Lock()
+
+
 def sidecar_path_for(track_id: str) -> str:
     return os.path.join(META_DIR, f"{track_id}.json")
 
@@ -1510,11 +1516,12 @@ def library_played(audio_id: int):
     stats = db.bump_play(audio_id)
     if not stats:
         raise HTTPException(status_code=404, detail="Track not found")
-    sidecar = read_sidecar(stats["track_id"])
-    if sidecar is not None:
-        sidecar["stats"] = {"play_count": stats["play_count"],
-                            "last_played": stats["last_played"]}
-        write_sidecar(stats["track_id"], sidecar)
+    with SIDECAR_LOCK:
+        sidecar = read_sidecar(stats["track_id"])
+        if sidecar is not None:
+            sidecar["stats"] = {"play_count": stats["play_count"],
+                                "last_played": stats["last_played"]}
+            write_sidecar(stats["track_id"], sidecar)
     return {"play_count": stats["play_count"], "last_played": stats["last_played"]}
 
 
@@ -1526,10 +1533,11 @@ def library_favorite(audio_id: int, payload: dict = Body(...)):
     track_id = db.set_favorite(audio_id, fav)
     if not track_id:
         raise HTTPException(status_code=404, detail="Track not found")
-    sidecar = read_sidecar(track_id)
-    if sidecar is not None:
-        sidecar["favorite"] = fav
-        write_sidecar(track_id, sidecar)
+    with SIDECAR_LOCK:
+        sidecar = read_sidecar(track_id)
+        if sidecar is not None:
+            sidecar["favorite"] = fav
+            write_sidecar(track_id, sidecar)
     return {"favorite": fav}
 
 

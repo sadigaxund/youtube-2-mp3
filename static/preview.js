@@ -315,11 +315,15 @@ if ('mediaSession' in navigator) {
         set('seekforward', d => { previewAudio.currentTime = Math.min(previewAudio.duration || 1e9, previewAudio.currentTime + ((d && d.seekOffset) || 10)); });
         updatePreviewMediaSession();
     };
+    // window.msOwner tracks which player (preview vs library) last claimed
+    // the OS media session. Without it, pausing one player clobbers the
+    // other's playbackState/position — on Android's media notification a
+    // stale 'paused' state makes the lock-screen controls unresponsive.
     physAudio.forEach(el => {
-        el.addEventListener('play', () => { if (el !== previewAudio) return; claimSession(); ms.playbackState = 'playing'; });
-        el.addEventListener('pause', () => { if (el !== previewAudio) return; ms.playbackState = 'paused'; });
-        el.addEventListener('loadedmetadata', () => { if (el === previewAudio) updatePreviewPositionState(); });
-        el.addEventListener('timeupdate', () => { if (el === previewAudio) updatePreviewPositionState(); });
+        el.addEventListener('play', () => { if (el !== previewAudio) return; window.msOwner = 'preview'; claimSession(); ms.playbackState = 'playing'; });
+        el.addEventListener('pause', () => { if (el !== previewAudio || window.msOwner !== 'preview') return; ms.playbackState = 'paused'; });
+        el.addEventListener('loadedmetadata', () => { if (el === previewAudio && window.msOwner === 'preview') updatePreviewPositionState(); });
+        el.addEventListener('timeupdate', () => { if (el === previewAudio && window.msOwner === 'preview') updatePreviewPositionState(); });
     });
 }
 

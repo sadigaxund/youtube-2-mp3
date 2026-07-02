@@ -1125,6 +1125,12 @@
                     createFilters.push({ field, value }); $('plFilterValue').value = ''; renderPlChips();
                 });
                 $('plFilterValue').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('plAddFilter').click(); } });
+                // Library-sourced autocomplete on the filter value, keyed off
+                // whichever field is currently selected (artist/genre/album/year/
+                // composer/custom key). Reuses the same dropdown as the metadata
+                // fields — attachSuggest (metadata.js) is a plain top-level
+                // function, so it's already global and reachable here.
+                attachSuggest($('plFilterValue'), () => $('plFilterField').value);
                 $('plCoverBtn').addEventListener('click', () => $('plCoverUpload').click());
                 $('plCoverUpload').addEventListener('change', e => {
                     const f = e.target.files[0]; if (!f) return;
@@ -1175,6 +1181,8 @@
                     renderLibrary();
                 });
                 $('libFilterValue').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('libAddFilter').click(); } });
+                // Same autocomplete as the dynamic-playlist filter builder above.
+                attachSuggest($('libFilterValue'), () => $('libFilterField').value);
 
                 // Now-playing controls
                 $('npPlay').addEventListener('click', () => {

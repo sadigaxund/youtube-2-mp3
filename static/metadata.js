@@ -193,7 +193,15 @@
                 render();
                 return {
                     wrap,
-                    getValues: () => values.slice(),
+                    // Commit any text still sitting in the input before reading:
+                    // the blur handler runs on a 150ms delay (so clicking a
+                    // suggestion wins), and a fast paste→Save could otherwise
+                    // read the chips before the pending value lands.
+                    getValues: () => {
+                        const pending = input.value.trim();
+                        if (pending && !values.includes(pending)) add(pending);
+                        return values.slice();
+                    },
                     setValues: (vals) => { values = (vals || []).slice(); render(); fire(); },
                     input,
                 };

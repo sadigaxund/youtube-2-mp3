@@ -36,6 +36,7 @@ Functions freely cross-reference across files without import/export.
 - `POST /save` — download + process + save
 - `POST /upload` — local file ingest (stages one file for the download form)
 - `POST /library/import` — drop-zone batch ingest straight into the library as unresolved tracks
+- `POST /library/batch-edit` — find-match-alter across the library (rename_key / delete_key / replace_value)
 - `GET|POST|PATCH|DELETE /library/*` — saved tracks; `POST /library/{id}/played` + `PATCH /library/{id}/favorite` for stats (sidecar-backed, survive DB rebuilds)
 - `GET|POST|PATCH|DELETE /playlists/*` — playlists
 - `GET|PUT|DELETE /facets/{field}/{value}/cover` — custom Browse-by thumbnails (`.youtify/facets/`)

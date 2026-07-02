@@ -392,8 +392,25 @@
                         <i data-lucide="arrow-left" style="width:16px;height:16px;"></i>
                     </button>
                     <h2 style="margin:0; font-size:1.15rem; flex:1;">Library</h2>
+                    <button id="libBatchBtn" type="button"
+                        style="width:auto; padding:0.4rem 0.8rem; font-size:0.78rem; margin:0; background:rgba(255,255,255,0.05); border:1px solid var(--card-border);">Batch edit</button>
                     <button id="libRefreshBtn" type="button"
                         style="width:auto; padding:0.4rem 0.8rem; font-size:0.78rem; margin:0; background:rgba(255,255,255,0.05); border:1px solid var(--card-border);">Rebuild index</button>
+                </div>
+
+                <div id="libBatchPanel" style="display:none; margin-bottom:1rem; padding:0.9rem 1rem; border:1px solid var(--card-border); border-radius:12px; background:rgba(255,255,255,0.03);">
+                    <div style="display:flex; flex-wrap:wrap; align-items:center; gap:0.5rem;">
+                        <select id="batchOp" style="width:auto; margin:0; padding:0.4rem 0.6rem; font-size:0.82rem; border-radius:8px;">
+                            <option value="replace_value">Find &amp; replace value</option>
+                            <option value="rename_key">Rename custom key</option>
+                            <option value="delete_key">Delete custom key</option>
+                        </select>
+                        <select id="batchField" style="width:auto; margin:0; padding:0.4rem 0.6rem; font-size:0.82rem; border-radius:8px;"></select>
+                        <input id="batchMatch" type="text" placeholder="match…" style="flex:1 1 130px; margin:0; padding:0.4rem 0.6rem; font-size:0.82rem; border-radius:8px;">
+                        <input id="batchReplace" type="text" placeholder="replace with… (empty = remove)" style="flex:1 1 150px; margin:0; padding:0.4rem 0.6rem; font-size:0.82rem; border-radius:8px;">
+                        <button id="batchApply" type="button" style="width:auto; margin:0; padding:0.4rem 0.9rem; font-size:0.82rem;">Apply</button>
+                    </div>
+                    <div id="batchPreview" style="margin-top:0.5rem; font-size:0.78rem; opacity:0.65;"></div>
                 </div>
 
                 <div class="lib-layout">

@@ -1227,6 +1227,92 @@
                     if (e.dataTransfer.files.length) importLibraryFiles(e.dataTransfer.files);
                 });
 
+                // ---- Batch edit (find-match-alter across the whole library) ----
+                function customKeys() {
+                    const seen = new Set(), keys = [];
+                    libItems.forEach(it => Object.keys(it.custom_fields || {}).forEach(k => {
+                        if (!seen.has(k.toLowerCase())) { seen.add(k.toLowerCase()); keys.push(k); }
+                    }));
+                    return keys;
+                }
+                function batchMatches(it, field, m) {
+                    if (field === 'artist') return (it.artists || []).some(v => v.toLowerCase() === m);
+                    if (field === 'genre') return (it.genres || []).some(v => v.toLowerCase() === m);
+                    if (field === 'album') return (it.albums && it.albums.length ? it.albums : (it.album ? [it.album] : []))
+                        .some(v => v.toLowerCase() === m);
+                    const cf = it.custom_fields || {};
+                    const hit = Object.keys(cf).find(k => k.toLowerCase() === field.toLowerCase());
+                    return hit != null && String(cf[hit] || '').split(/[|,;]/)
+                        .some(t => t.trim().toLowerCase() === m);
+                }
+                function refreshBatchPanel() {
+                    const op = $('batchOp').value;
+                    const keyOp = op !== 'replace_value';
+                    const cur = $('batchField').value;
+                    const fields = keyOp ? customKeys()
+                        : ['artist', 'genre', 'album', 'composer', ...customKeys().filter(k => k.toLowerCase() !== 'composer')];
+                    $('batchField').innerHTML = fields
+                        .map(f => `<option value="${f}">${f.charAt(0).toUpperCase() + f.slice(1)}</option>`).join('');
+                    if (cur && fields.includes(cur)) $('batchField').value = cur;
+                    $('batchMatch').style.display = keyOp ? 'none' : '';
+                    $('batchReplace').style.display = op === 'delete_key' ? 'none' : '';
+                    $('batchReplace').placeholder = op === 'rename_key' ? 'new key name…' : 'replace with… (empty = remove)';
+                    updateBatchPreview();
+                }
+                function updateBatchPreview() {
+                    const op = $('batchOp').value, field = $('batchField').value;
+                    let n = 0;
+                    if (op === 'replace_value') {
+                        const m = $('batchMatch').value.trim().toLowerCase();
+                        n = m ? libItems.filter(it => batchMatches(it, field, m)).length : 0;
+                    } else {
+                        n = field ? libItems.filter(it =>
+                            Object.keys(it.custom_fields || {}).some(k => k.toLowerCase() === field.toLowerCase())).length : 0;
+                    }
+                    $('batchPreview').textContent = field ? `${n} track${n === 1 ? '' : 's'} affected` : 'No custom keys in the library.';
+                    return n;
+                }
+                $('libBatchBtn').addEventListener('click', () => {
+                    const p = $('libBatchPanel');
+                    const show = p.style.display === 'none';
+                    p.style.display = show ? 'block' : 'none';
+                    if (show) refreshBatchPanel();
+                });
+                $('batchOp').addEventListener('change', refreshBatchPanel);
+                $('batchField').addEventListener('change', updateBatchPreview);
+                $('batchMatch').addEventListener('input', updateBatchPreview);
+                attachSuggest($('batchMatch'), () => $('batchField').value);
+                $('batchApply').addEventListener('click', async () => {
+                    const op = $('batchOp').value, field = $('batchField').value;
+                    const match = $('batchMatch').value.trim(), repl = $('batchReplace').value.trim();
+                    if (!field) return;
+                    if (op === 'replace_value' && !match) { showError('Enter a value to match.'); return; }
+                    if (op === 'rename_key' && !repl) { showError('Enter the new key name.'); return; }
+                    const n = updateBatchPreview();
+                    if (!n) { showError('Nothing matches.'); return; }
+                    const verb = op === 'delete_key' ? 'Delete key from' : op === 'rename_key' ? 'Rename key on' : 'Replace value on';
+                    if (!confirm(`${verb} ${n} track${n === 1 ? '' : 's'}?`)) return;
+                    const body = op === 'replace_value'
+                        ? { op, field, match, replace: repl }
+                        : { op, key: field, new_key: repl };
+                    setLoading($('batchApply'), true);
+                    try {
+                        const res = await fetch('/library/batch-edit', {
+                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(body),
+                        });
+                        if (!res.ok) throw new Error((await res.json()).detail || 'failed');
+                        const data = await res.json();
+                        showToast(`Updated ${data.affected} track${data.affected === 1 ? '' : 's'}`);
+                        await loadLibrary();
+                        refreshBatchPanel();
+                    } catch (e) {
+                        showError('Batch edit failed: ' + e.message);
+                    } finally {
+                        setLoading($('batchApply'), false);
+                    }
+                });
+
                 // Filter / sort controls
                 $('libSortField').addEventListener('change', () => { libSort.field = $('libSortField').value; renderLibrary(); });
                 $('libSortDir').addEventListener('click', () => {

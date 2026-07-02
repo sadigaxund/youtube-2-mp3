@@ -1297,7 +1297,12 @@ def library_patch(audio_id: int, payload: dict = Body(...)):
     detail = db.get_audio_detail(audio_id)
     if not detail:
         raise HTTPException(status_code=404, detail="Track not found")
+    return apply_metadata_edit(detail, payload)
 
+
+def apply_metadata_edit(detail: dict, payload: dict) -> dict:
+    """Single-track metadata edit core, shared by PATCH and batch edits."""
+    audio_id = detail["id"]
     video_id = detail["youtube_id"]
     track_id = detail.get("track_id") or video_id
     sidecar = read_sidecar(track_id) or {}
@@ -1390,6 +1395,105 @@ def library_patch(audio_id: int, payload: dict = Body(...)):
         unresolved=False,
     )
     return db.get_audio_detail(audio_id)
+
+
+@app.post("/library/batch-edit")
+def library_batch_edit(payload: dict = Body(...)):
+    """
+    Find-and-alter metadata across the whole library in one call.
+
+    Ops:
+      rename_key:    {op, key, new_key}          — rename a custom-tag key everywhere
+      delete_key:    {op, key}                   — drop a custom-tag key everywhere
+      replace_value: {op, field, match, replace} — swap one value for another on
+                     artist/genre/album/composer/<custom key>; an empty replace
+                     removes the value. Matching is exact per value/token,
+                     case-insensitive.
+
+    Each affected track runs through the same edit core as a manual PATCH
+    (re-tag + rename + sidecar + DB), so files and index never drift.
+    """
+    _require_library()
+    op = payload.get("op")
+    affected = []
+
+    def norm(s):
+        return str(s or "").strip().lower()
+
+    def key_of(cf, key):
+        return next((k for k in cf if norm(k) == norm(key)), None)
+
+    if op in ("rename_key", "delete_key"):
+        key = (payload.get("key") or "").strip()
+        new_key = (payload.get("new_key") or "").strip()
+        if not key or (op == "rename_key" and not new_key):
+            raise HTTPException(status_code=422, detail="key (and new_key) required")
+        for it in db.get_library():
+            if it.get("unresolved"):
+                continue   # limbo tracks wait for manual resolution
+            cf = it.get("custom_fields") or {}
+            hit = key_of(cf, key)
+            if hit is None:
+                continue
+            tags, seen = [], set()
+            for k, v in cf.items():
+                if k == hit:
+                    if op == "delete_key":
+                        continue
+                    k = new_key
+                if norm(k) in seen:   # rename collided with an existing key
+                    continue
+                seen.add(norm(k))
+                tags.append({"key": k, "value": v})
+            apply_metadata_edit(db.get_audio_detail(it["id"]), {"custom_tags": tags})
+            affected.append(it["id"])
+
+    elif op == "replace_value":
+        field = (payload.get("field") or "").strip()
+        match = (payload.get("match") or "").strip()
+        replace = (payload.get("replace") or "").strip()
+        if not field or not match:
+            raise HTTPException(status_code=422, detail="field and match required")
+        m = norm(match)
+        list_fields = {"artist": "artists", "genre": "genres", "album": "albums"}
+        for it in db.get_library():
+            if it.get("unresolved"):
+                continue   # limbo tracks wait for manual resolution
+            patch = None
+            if field in list_fields:
+                src = it.get(list_fields[field]) or []
+                if any(norm(v) == m for v in src):
+                    new_list = []
+                    for v in src:
+                        v2 = replace if norm(v) == m else v
+                        if v2 and norm(v2) not in {norm(x) for x in new_list}:
+                            new_list.append(v2)
+                    patch = {list_fields[field]: new_list}
+            else:
+                # Composer / custom keys store delimiter-joined tokens
+                # (e.g. "Sad|Angry") — replace at token level.
+                cf = it.get("custom_fields") or {}
+                hit = key_of(cf, "Composer" if field.lower() == "composer" else field)
+                if hit is not None:
+                    toks = [t.strip() for t in re.split(r"[|,;]", str(cf[hit] or "")) if t.strip()]
+                    if any(norm(t) == m for t in toks):
+                        new_toks = []
+                        for t in toks:
+                            t2 = replace if norm(t) == m else t
+                            if t2 and norm(t2) not in {norm(x) for x in new_toks}:
+                                new_toks.append(t2)
+                        tags = [{"key": k, "value": ("|".join(new_toks) if k == hit else v)}
+                                for k, v in cf.items()
+                                if not (k == hit and not new_toks)]
+                        patch = {"custom_tags": tags}
+            if patch is not None:
+                apply_metadata_edit(db.get_audio_detail(it["id"]), patch)
+                affected.append(it["id"])
+
+    else:
+        raise HTTPException(status_code=422,
+                            detail="op must be rename_key|delete_key|replace_value")
+    return {"affected": len(affected), "ids": affected}
 
 
 @app.post("/library/{audio_id}/played")

@@ -277,7 +277,7 @@
                             return libItems.filter(it => passesChips(it, currentSource.filters));
                         }
                         const ids = currentSource.track_ids || [];
-                        return libItems.filter(it => ids.includes(it.youtube_id));
+                        return libItems.filter(it => ids.includes(it.track_id || it.youtube_id));
                     }
                     if (currentSource.type === 'browseAll') return libItems;   // full-grid view; player scope = everything
                     if (currentSource.type === 'browse') {
@@ -666,11 +666,11 @@
                         { label: 'Play next', fn: () => { playQueue.unshift(it.id); renderQueue(); } },
                         { label: 'Add to queue', fn: () => { playQueue.push(it.id); renderQueue(); } },
                         { label: it.favorite ? 'Unfavorite' : 'Favorite', fn: () => toggleFavorite(it) },
-                        { label: 'Add to playlist…', fn: () => openPlaylistMenu(anchor, it.youtube_id) },
+                        { label: 'Add to playlist…', fn: () => openPlaylistMenu(anchor, it.track_id || it.youtube_id) },
                         { label: 'Edit', fn: () => openEdit(it.id) },
                         { label: 'Download', fn: () => downloadItem(it) },
                         inManual
-                            ? { label: 'Remove from playlist', danger: true, fn: () => removeFromPlaylist(currentSource.id, it.youtube_id) }
+                            ? { label: 'Remove from playlist', danger: true, fn: () => removeFromPlaylist(currentSource.id, it.track_id || it.youtube_id) }
                             : { label: 'Delete', danger: true, fn: () => deleteItem(it.id, title) },
                     ]);
                 }
@@ -781,7 +781,7 @@
                     try {
                         await fetch(`/playlists/${pid}/tracks`, {
                             method: 'POST', headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ youtube_id: yid }),
+                            body: JSON.stringify({ track_id: yid }),
                         });
                         loadPlaylists();
                     } catch (e) { showError('Add failed'); }

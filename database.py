@@ -7,7 +7,8 @@ If the DB is deleted it is repopulated by scanning those sidecars
 (`rebuild_from_sidecars`).
 
 Schema:
-    audio_files     - one row per saved track (keyed by youtube_id)
+    audio_files     - one row per saved track (keyed by track_id; a youtube_id
+                      can have several tracks, e.g. cut segments of one video)
     tags            - distinct (kind, value) pairs for artist/genre suggestions
     audio_tags      - many-to-many between audio_files and tags
     metadata_fields - EAV store for arbitrary custom tags
@@ -21,7 +22,7 @@ import sqlite3
 from contextlib import contextmanager
 from typing import Optional, Dict, Any, List
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 def _norm_list(values, titlecase=False) -> List[str]:
@@ -66,10 +67,20 @@ class AudioMetadataDB:
     def init_db(self):
         with self.get_connection() as conn:
             conn.execute("PRAGMA journal_mode=WAL")
+            # The DB is a disposable index: on any schema-version mismatch we
+            # drop everything and let the startup rebuild repopulate from the
+            # sidecars (v4 re-keys audio_files by track_id instead of
+            # youtube_id, which an additive ALTER cannot express).
+            ver = conn.execute("PRAGMA user_version").fetchone()[0]
+            if ver != SCHEMA_VERSION:
+                for t in ("metadata_fields", "audio_tags", "audio_files",
+                          "tags", "playlist_tracks", "playlists"):
+                    conn.execute(f"DROP TABLE IF EXISTS {t}")
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS audio_files (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    youtube_id TEXT UNIQUE NOT NULL,
+                    track_id TEXT UNIQUE NOT NULL,
+                    youtube_id TEXT NOT NULL,
                     title TEXT,
                     album TEXT,
                     year INTEGER,
@@ -78,6 +89,9 @@ class AudioMetadataDB:
                     filename TEXT,
                     sidecar_path TEXT,
                     effects_json TEXT,
+                    play_count INTEGER DEFAULT 0,
+                    last_played TIMESTAMP,
+                    favorite INTEGER DEFAULT 0,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
@@ -119,32 +133,19 @@ class AudioMetadataDB:
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
-            # Add `position` to pre-existing DBs (no-op if already present).
-            try:
-                conn.execute("ALTER TABLE playlists ADD COLUMN position INTEGER DEFAULT 0")
-            except Exception:
-                pass
-            # v3: play stats + favorite (no-ops if already present).
-            for ddl in ("ALTER TABLE audio_files ADD COLUMN play_count INTEGER DEFAULT 0",
-                        "ALTER TABLE audio_files ADD COLUMN last_played TIMESTAMP",
-                        "ALTER TABLE audio_files ADD COLUMN favorite INTEGER DEFAULT 0"):
-                try:
-                    conn.execute(ddl)
-                except Exception:
-                    pass
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS playlist_tracks (
                     playlist_id TEXT NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
-                    youtube_id TEXT NOT NULL,
+                    track_id TEXT NOT NULL,
                     position INTEGER,
-                    PRIMARY KEY (playlist_id, youtube_id)
+                    PRIMARY KEY (playlist_id, track_id)
                 )
             ''')
             conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
 
     # ------------------------------------------------------------------ writes
 
-    def upsert_audio(self, *, youtube_id: str, title: Optional[str] = None,
+    def upsert_audio(self, *, track_id: str, youtube_id: str, title: Optional[str] = None,
                      album: Optional[str] = None, year=None, duration=None,
                      rel_path: Optional[str] = None, filename: Optional[str] = None,
                      sidecar_path: Optional[str] = None, effects: Optional[dict] = None,
@@ -154,7 +155,7 @@ class AudioMetadataDB:
                      play_count: Optional[int] = None, last_played: Optional[str] = None,
                      favorite: Optional[bool] = None, created_at: Optional[str] = None) -> int:
         """
-        Insert or update a track by youtube_id (id is preserved on update).
+        Insert or update a track by track_id (id is preserved on update).
         Tags and custom fields are fully replaced to mirror the current state.
         play_count/last_played/favorite/created_at are sidecar-backed (so they
         survive rebuilds); when None, existing DB values are preserved.
@@ -181,12 +182,13 @@ class AudioMetadataDB:
         with self.get_connection() as conn:
             conn.execute('''
                 INSERT INTO audio_files
-                    (youtube_id, title, album, year, duration, rel_path, filename,
+                    (track_id, youtube_id, title, album, year, duration, rel_path, filename,
                      sidecar_path, effects_json, play_count, last_played, favorite,
                      created_at, updated_at)
-                VALUES (?,?,?,?,?,?,?,?,?, COALESCE(?, 0), ?, COALESCE(?, 0),
+                VALUES (?,?,?,?,?,?,?,?,?,?, COALESCE(?, 0), ?, COALESCE(?, 0),
                         COALESCE(?, CURRENT_TIMESTAMP), CURRENT_TIMESTAMP)
-                ON CONFLICT(youtube_id) DO UPDATE SET
+                ON CONFLICT(track_id) DO UPDATE SET
+                    youtube_id=excluded.youtube_id,
                     title=excluded.title, album=excluded.album, year=excluded.year,
                     duration=excluded.duration, rel_path=excluded.rel_path,
                     filename=excluded.filename, sidecar_path=excluded.sidecar_path,
@@ -196,13 +198,13 @@ class AudioMetadataDB:
                     favorite=COALESCE(?, audio_files.favorite),
                     created_at=COALESCE(?, audio_files.created_at),
                     updated_at=CURRENT_TIMESTAMP
-            ''', (youtube_id, title, album, year_val, dur_val, rel_path, filename,
+            ''', (track_id, youtube_id, title, album, year_val, dur_val, rel_path, filename,
                   sidecar_path, effects_json, play_count, last_played, fav_val, created_at,
                   play_count, last_played, fav_val, created_at))
 
             # lastrowid is unreliable on the DO UPDATE branch — re-select.
-            row = conn.execute("SELECT id FROM audio_files WHERE youtube_id=?",
-                               (youtube_id,)).fetchone()
+            row = conn.execute("SELECT id FROM audio_files WHERE track_id=?",
+                               (track_id,)).fetchone()
             audio_id = row["id"]
 
             # Full replace of child rows.
@@ -239,20 +241,20 @@ class AudioMetadataDB:
             if cur.rowcount == 0:
                 return None
             row = conn.execute(
-                "SELECT youtube_id, play_count, last_played FROM audio_files WHERE id=?",
+                "SELECT track_id, play_count, last_played FROM audio_files WHERE id=?",
                 (audio_file_id,)).fetchone()
             return dict(row) if row else None
 
     def set_favorite(self, audio_file_id: int, fav: bool) -> Optional[str]:
-        """Toggle favorite. Returns the track's youtube_id or None if absent."""
+        """Toggle favorite. Returns the track's track_id or None if absent."""
         with self.get_connection() as conn:
-            row = conn.execute("SELECT youtube_id FROM audio_files WHERE id=?",
+            row = conn.execute("SELECT track_id FROM audio_files WHERE id=?",
                                (audio_file_id,)).fetchone()
             if not row:
                 return None
             conn.execute("UPDATE audio_files SET favorite=? WHERE id=?",
                          (1 if fav else 0, audio_file_id))
-            return row["youtube_id"]
+            return row["track_id"]
 
     def delete_audio(self, audio_file_id: int) -> Optional[dict]:
         """Delete a track. Returns the row (for file cleanup) or None if absent."""
@@ -263,6 +265,13 @@ class AudioMetadataDB:
                 return None
             conn.execute("DELETE FROM audio_files WHERE id=?", (audio_file_id,))
             return dict(row)
+
+    def count_tracks_for_video(self, youtube_id: str) -> int:
+        """How many tracks (segments) still reference this youtube_id."""
+        with self.get_connection() as conn:
+            return conn.execute(
+                "SELECT COUNT(*) FROM audio_files WHERE youtube_id=?",
+                (youtube_id,)).fetchone()[0]
 
     # ------------------------------------------------------------------- reads
 
@@ -456,6 +465,9 @@ class AudioMetadataDB:
                 meta = sc.get("metadata", {})
                 stats = sc.get("stats") or {}
                 self.upsert_audio(
+                    # Pre-v2 sidecars carry no track_id: the youtube_id doubles
+                    # as one (their filename is <youtube_id>.json).
+                    track_id=sc.get("track_id") or sc["youtube_id"],
                     youtube_id=sc["youtube_id"],
                     title=meta.get("title"),
                     album=meta.get("album"),
@@ -499,9 +511,9 @@ class AudioMetadataDB:
                   1 if has_cover else 0, int(position or 0)))
             if track_ids is not None:
                 conn.execute("DELETE FROM playlist_tracks WHERE playlist_id=?", (id,))
-                for pos, yid in enumerate(track_ids):
-                    conn.execute("INSERT OR IGNORE INTO playlist_tracks(playlist_id, youtube_id, position) "
-                                 "VALUES(?,?,?)", (id, yid, pos))
+                for pos, tid in enumerate(track_ids):
+                    conn.execute("INSERT OR IGNORE INTO playlist_tracks(playlist_id, track_id, position) "
+                                 "VALUES(?,?,?)", (id, tid, pos))
 
     def list_playlists(self) -> List[dict]:
         with self.get_connection() as conn:
@@ -527,8 +539,8 @@ class AudioMetadataDB:
             d = dict(r)
             d["filters"] = json.loads(d.pop("filters_json") or "[]")
             d["sort"] = json.loads(d.pop("sort_json") or "{}")
-            d["track_ids"] = [x["youtube_id"] for x in conn.execute(
-                "SELECT youtube_id FROM playlist_tracks WHERE playlist_id=? ORDER BY position",
+            d["track_ids"] = [x["track_id"] for x in conn.execute(
+                "SELECT track_id FROM playlist_tracks WHERE playlist_id=? ORDER BY position",
                 (pid,)).fetchall()]
             return d
 

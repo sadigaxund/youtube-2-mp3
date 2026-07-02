@@ -1,5 +1,6 @@
 import os
 import re
+import hashlib
 import tempfile
 import uuid
 import shutil
@@ -88,16 +89,23 @@ def cleanup_stale_sidecars():
     """Remove sidecars/playlists/originals whose MP3 file no longer exists."""
     if BROWSER_DOWNLOAD_MODE:
         return
-    # 1. Remove stale meta sidecars.
+    # 1. Remove stale meta sidecars. Collect the youtube_ids still referenced
+    #    by live sidecars — needed in step 3 because sidecar filenames are
+    #    track_ids, which no longer always equal the video id.
+    live_video_ids = set()
     for path in glob.glob(os.path.join(META_DIR, "*.json")):
+        base = os.path.splitext(os.path.basename(path))[0]
         try:
             with open(path) as f:
                 sc = json.load(f)
             rel = sc.get("rel_path")
             if rel and not os.path.exists(os.path.join(DOWNLOAD_DIR, rel)):
                 os.remove(path)
+            else:
+                live_video_ids.add(sc.get("youtube_id") or base)
         except Exception:
-            pass
+            # Unreadable sidecar: keep it, and keep its original too.
+            live_video_ids.add(base)
     # 2. Clean up playlists: drop missing track_ids; delete if empty.
     existing_ids = {os.path.splitext(f)[0] for f in os.listdir(META_DIR) if f.endswith(".json")}
     for path in glob.glob(os.path.join(PLAYLISTS_DIR, "*.json")):
@@ -118,10 +126,10 @@ def cleanup_stale_sidecars():
                 os.replace(tmp, path)
         except Exception:
             pass
-    # 3. Remove orphaned originals (no sidecar).
+    # 3. Remove orphaned originals (no sidecar references their video id).
     for fname in os.listdir(ORIGINALS_DIR):
         vid = os.path.splitext(fname)[0]
-        if not os.path.exists(os.path.join(META_DIR, f"{vid}.json")):
+        if vid not in live_video_ids:
             try:
                 os.remove(os.path.join(ORIGINALS_DIR, fname))
             except OSError:
@@ -370,21 +378,36 @@ def resolve_source(url: Optional[str], source_id: Optional[str]):
     return validate_youtube_url(url), None
 
 
-def sidecar_path_for(video_id: str) -> str:
-    return os.path.join(META_DIR, f"{video_id}.json")
+def track_id_for(video_id: str, start_time: Optional[float] = None,
+                 end_time: Optional[float] = None) -> str:
+    """
+    Track identity. A full-length save keeps the plain video_id (so re-saving
+    a video updates it, and pre-track_id sidecars stay valid); a cut segment
+    gets video_id__<hash8(start,end)> so different segments of one long video
+    are distinct tracks instead of overwriting each other's sidecar.
+    """
+    if start_time is None and end_time is None:
+        return video_id
+    seg = "%s-%s" % ("" if start_time is None else round(float(start_time), 3),
+                     "" if end_time is None else round(float(end_time), 3))
+    return f"{video_id}__{hashlib.sha1(seg.encode()).hexdigest()[:8]}"
 
 
-def write_sidecar(video_id: str, data: dict):
+def sidecar_path_for(track_id: str) -> str:
+    return os.path.join(META_DIR, f"{track_id}.json")
+
+
+def write_sidecar(track_id: str, data: dict):
     """Atomically write the per-track sidecar JSON."""
-    path = sidecar_path_for(video_id)
+    path = sidecar_path_for(track_id)
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(data, fh, indent=2, ensure_ascii=False)
     os.replace(tmp, path)
 
 
-def read_sidecar(video_id: str) -> Optional[dict]:
-    path = sidecar_path_for(video_id)
+def read_sidecar(track_id: str) -> Optional[dict]:
+    path = sidecar_path_for(track_id)
     if not os.path.exists(path):
         return None
     try:
@@ -798,6 +821,10 @@ def save_audio(
         # be rebuilt from it.
         if not BROWSER_DOWNLOAD_MODE:
             try:
+                # Segment-aware identity: cut ranges of one video are separate
+                # tracks; the archived original stays keyed by video_id (all
+                # segments share the one source download).
+                track_id = track_id_for(video_id, start_time, end_time)
                 original_dest = archive_original(CACHE_DIR, video_id, ORIGINALS_DIR)
                 original_rel = (os.path.relpath(original_dest, DOWNLOAD_DIR)
                                 if original_dest else None)
@@ -817,14 +844,16 @@ def save_audio(
                 }
                 artists = split_multi(meta_artist, delimiter)
                 genres = split_multi(meta_genre, delimiter)
-                # Re-saving the same video must not reset its stats, favorite
-                # flag, or date-added — carry them over from any prior sidecar.
-                prev = read_sidecar(video_id) or {}
+                # Re-saving the same track (same video + same cut) must not
+                # reset its stats, favorite flag, or date-added — carry them
+                # over from any prior sidecar.
+                prev = read_sidecar(track_id) or {}
                 stats = prev.get("stats") or {"play_count": 0, "last_played": None}
                 favorite = bool(prev.get("favorite", False))
                 created_at = prev.get("created_at") or datetime.datetime.now().isoformat()
                 sidecar = {
-                    "schema_version": 1,
+                    "schema_version": 2,
+                    "track_id": track_id,
                     "youtube_id": video_id,
                     "source_url": url or f"upload:{video_id}",
                     "rel_path": os.path.relpath(final_path, DOWNLOAD_DIR),
@@ -843,13 +872,14 @@ def save_audio(
                     "created_at": created_at,
                     "updated_at": datetime.datetime.now().isoformat(),
                 }
-                write_sidecar(video_id, sidecar)
+                write_sidecar(track_id, sidecar)
 
                 db.upsert_audio(
+                    track_id=track_id,
                     youtube_id=video_id, title=meta_title, album=meta_album_first,
                     year=meta_year, duration=duration,
                     rel_path=sidecar["rel_path"], filename=final_filename,
-                    sidecar_path=f"{video_id}.json", effects=effects,
+                    sidecar_path=f"{track_id}.json", effects=effects,
                     artists=artists, genres=genres, albums=albums,
                     custom_fields={t["key"]: t.get("value")
                                    for t in custom_tags if t.get("key")},
@@ -1138,7 +1168,8 @@ def library_patch(audio_id: int, payload: dict = Body(...)):
         raise HTTPException(status_code=404, detail="Track not found")
 
     video_id = detail["youtube_id"]
-    sidecar = read_sidecar(video_id) or {}
+    track_id = detail.get("track_id") or video_id
+    sidecar = read_sidecar(track_id) or {}
     delimiter = payload.get("delimiter") or sidecar.get("metadata", {}).get("delimiter", "|")
 
     title = payload.get("title", detail.get("title"))
@@ -1204,6 +1235,7 @@ def library_patch(audio_id: int, payload: dict = Body(...)):
 
     # Persist sidecar + DB.
     sidecar.setdefault("youtube_id", video_id)
+    sidecar.setdefault("track_id", track_id)
     sidecar["rel_path"] = new_rel
     sidecar["filename"] = new_filename
     sidecar["metadata"] = {
@@ -1213,12 +1245,13 @@ def library_patch(audio_id: int, payload: dict = Body(...)):
         "custom_tags": custom_tags,
     }
     sidecar["updated_at"] = datetime.datetime.now().isoformat()
-    write_sidecar(video_id, sidecar)
+    write_sidecar(track_id, sidecar)
 
     db.upsert_audio(
+        track_id=track_id,
         youtube_id=video_id, title=title, album=album, year=year,
         duration=sidecar.get("duration", detail.get("duration")),
-        rel_path=new_rel, filename=new_filename, sidecar_path=f"{video_id}.json",
+        rel_path=new_rel, filename=new_filename, sidecar_path=f"{track_id}.json",
         effects=eff, artists=artists, genres=genres, albums=albums,
         custom_fields={t["key"]: t.get("value") for t in custom_tags if t.get("key")},
     )
@@ -1236,11 +1269,11 @@ def library_played(audio_id: int):
     stats = db.bump_play(audio_id)
     if not stats:
         raise HTTPException(status_code=404, detail="Track not found")
-    sidecar = read_sidecar(stats["youtube_id"])
+    sidecar = read_sidecar(stats["track_id"])
     if sidecar is not None:
         sidecar["stats"] = {"play_count": stats["play_count"],
                             "last_played": stats["last_played"]}
-        write_sidecar(stats["youtube_id"], sidecar)
+        write_sidecar(stats["track_id"], sidecar)
     return {"play_count": stats["play_count"], "last_played": stats["last_played"]}
 
 
@@ -1249,13 +1282,13 @@ def library_favorite(audio_id: int, payload: dict = Body(...)):
     """Set/unset favorite; mirrored into the sidecar like play stats."""
     _require_library()
     fav = bool(payload.get("favorite"))
-    youtube_id = db.set_favorite(audio_id, fav)
-    if not youtube_id:
+    track_id = db.set_favorite(audio_id, fav)
+    if not track_id:
         raise HTTPException(status_code=404, detail="Track not found")
-    sidecar = read_sidecar(youtube_id)
+    sidecar = read_sidecar(track_id)
     if sidecar is not None:
         sidecar["favorite"] = fav
-        write_sidecar(youtube_id, sidecar)
+        write_sidecar(track_id, sidecar)
     return {"favorite": fav}
 
 
@@ -1271,12 +1304,13 @@ def library_reprocess(audio_id: int, payload: dict = Body(...)):
         raise HTTPException(status_code=404, detail="Track not found")
 
     video_id = detail["youtube_id"]
+    track_id = detail.get("track_id") or video_id
     original_path = find_original(ORIGINALS_DIR, video_id)
     if not original_path:
         raise HTTPException(status_code=409,
                             detail="No archived original — cannot reprocess this track.")
 
-    sidecar = read_sidecar(video_id) or {}
+    sidecar = read_sidecar(track_id) or {}
     prev_eff = sidecar.get("effects", detail.get("effects", {})) or {}
     # Merge incoming effect overrides over the stored set.
     effects = {**prev_eff, **{k: v for k, v in payload.items() if k in (
@@ -1316,12 +1350,13 @@ def library_reprocess(audio_id: int, payload: dict = Body(...)):
 
     sidecar["effects"] = effects
     sidecar["updated_at"] = datetime.datetime.now().isoformat()
-    write_sidecar(video_id, sidecar)
+    write_sidecar(track_id, sidecar)
     db.upsert_audio(
+        track_id=track_id,
         youtube_id=video_id, title=detail.get("title"), album=detail.get("album"),
         year=detail.get("year"), duration=detail.get("duration"),
         rel_path=detail["rel_path"], filename=detail.get("filename"),
-        sidecar_path=f"{video_id}.json", effects=effects,
+        sidecar_path=f"{track_id}.json", effects=effects,
         artists=artists, genres=genres,
         custom_fields={t["key"]: t.get("value") for t in custom_tags if t.get("key")},
     )
@@ -1336,16 +1371,19 @@ def library_delete(audio_id: int, purge_original: bool = Query(False)):
     if not row:
         raise HTTPException(status_code=404, detail="Track not found")
     video_id = row["youtube_id"]
+    track_id = row.get("track_id") or video_id
     for path in filter(None, [
         _abs(row["rel_path"]) if row.get("rel_path") else None,
-        sidecar_path_for(video_id),
+        sidecar_path_for(track_id),
     ]):
         try:
             if os.path.exists(path):
                 os.remove(path)
         except Exception as e:
             log.warning("Failed to delete %s: %s", path, e)
-    if purge_original:
+    # Only purge the shared original once no other segment of the video
+    # still references it.
+    if purge_original and db.count_tracks_for_video(video_id) == 0:
         orig = find_original(ORIGINALS_DIR, video_id)
         if orig and os.path.exists(orig):
             try:
@@ -1540,23 +1578,23 @@ def playlist_add_track(pid: str, payload: dict = Body(...)):
     pl = db.get_playlist(pid)
     if not pl:
         raise HTTPException(status_code=404, detail="Playlist not found")
-    yid = payload.get("youtube_id")
-    if not yid:
-        raise HTTPException(status_code=422, detail="youtube_id required")
+    tid = payload.get("track_id") or payload.get("youtube_id")
+    if not tid:
+        raise HTTPException(status_code=422, detail="track_id required")
     ids = pl["track_ids"]
-    if yid not in ids:
-        ids.append(yid)
+    if tid not in ids:
+        ids.append(tid)
     return _save_playlist(pid, name=pl["name"], kind=pl["kind"], filters=pl["filters"],
                           sort=pl["sort"], track_ids=ids, has_cover=pl["has_cover"])
 
 
-@app.delete("/playlists/{pid}/tracks/{youtube_id}")
-def playlist_remove_track(pid: str, youtube_id: str):
+@app.delete("/playlists/{pid}/tracks/{track_id}")
+def playlist_remove_track(pid: str, track_id: str):
     _require_library()
     pl = db.get_playlist(pid)
     if not pl:
         raise HTTPException(status_code=404, detail="Playlist not found")
-    ids = [x for x in pl["track_ids"] if x != youtube_id]
+    ids = [x for x in pl["track_ids"] if x != track_id]
     return _save_playlist(pid, name=pl["name"], kind=pl["kind"], filters=pl["filters"],
                           sort=pl["sort"], track_ids=ids, has_cover=pl["has_cover"])
 

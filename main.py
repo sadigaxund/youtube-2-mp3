@@ -556,6 +556,24 @@ def build_filename(title, album, artist, composer, delimiter="|", ext="mp3") -> 
     return " - ".join(parts) + "." + ext.lstrip(".")
 
 
+def save_filename_base(video_id: str, is_upload: bool, url: Optional[str],
+                       custom_filename: Optional[str], meta_title: Optional[str],
+                       meta_album_first: Optional[str], meta_artist: Optional[str],
+                       composer: Optional[str], delimiter: str) -> str:
+    """
+    Filename base (no extension) a save will produce — shared by /save and
+    /save/peek so the pre-save overwrite warning matches reality, and used
+    as the name component of the track identity.
+    """
+    if custom_filename and custom_filename.strip():
+        return sanitize(custom_filename) or "audio"
+    title_for_name = meta_title
+    if not title_for_name:
+        title_for_name = get_video_info(url).get('title', video_id) if not is_upload else video_id
+    return os.path.splitext(build_filename(title_for_name, meta_album_first,
+                                           meta_artist, composer, delimiter))[0]
+
+
 def resolve_source(url: Optional[str], source_id: Optional[str]):
     """
     Resolve an input to (video_id, source_path). For an upload/cached source
@@ -573,19 +591,48 @@ def resolve_source(url: Optional[str], source_id: Optional[str]):
     return validate_youtube_url(url), None
 
 
+def _segment_key(start_time: Optional[float], end_time: Optional[float]) -> str:
+    if start_time is None and end_time is None:
+        return ""
+    return "%s-%s" % ("" if start_time is None else round(float(start_time), 3),
+                      "" if end_time is None else round(float(end_time), 3))
+
+
 def track_id_for(video_id: str, start_time: Optional[float] = None,
                  end_time: Optional[float] = None) -> str:
     """
-    Track identity. A full-length save keeps the plain video_id (so re-saving
-    a video updates it, and pre-track_id sidecars stay valid); a cut segment
-    gets video_id__<hash8(start,end)> so different segments of one long video
-    are distinct tracks instead of overwriting each other's sidecar.
+    LEGACY track identity (source + cut only) — kept so resolve_track_id can
+    find tracks saved before names joined the identity, and old sidecars
+    (plain video_id / video_id__<hash8(cut)>) stay valid without renames.
     """
-    if start_time is None and end_time is None:
+    seg = _segment_key(start_time, end_time)
+    if not seg:
         return video_id
-    seg = "%s-%s" % ("" if start_time is None else round(float(start_time), 3),
-                     "" if end_time is None else round(float(end_time), 3))
     return f"{video_id}__{hashlib.sha1(seg.encode()).hexdigest()[:8]}"
+
+
+def resolve_track_id(video_id: str, start_time: Optional[float],
+                     end_time: Optional[float], filename_base: str) -> str:
+    """
+    Track identity = source video + cut range + name-deriving metadata (the
+    filename base, i.e. title/album/artist/composer or a custom filename).
+    Re-saving with the same name updates the track in place; a different
+    name creates a sibling track sharing the archived original. Falls back
+    to a track's legacy (pre-name-aware) id when its stored filename still
+    matches, so existing libraries update instead of duplicating.
+    """
+    name = (filename_base or "").strip().casefold()
+    key = f"{_segment_key(start_time, end_time)}|{name}"
+    new_id = f"{video_id}__{hashlib.sha1(key.encode()).hexdigest()[:8]}"
+    if read_sidecar(new_id) is not None:
+        return new_id
+    legacy = track_id_for(video_id, start_time, end_time)
+    sc = read_sidecar(legacy)
+    if sc is not None:
+        stored = os.path.splitext(sc.get("filename") or "")[0]
+        if stored.strip().casefold() == name:
+            return legacy
+    return new_id
 
 
 # Serializes sidecar read-modify-write cycles (play stats, favorite) so two
@@ -963,14 +1010,11 @@ def save_audio(
         meta_album_first = albums[0] if albums else None
 
         # 4. Build filename "Title (Album) - Artist (Composer).<fmt>", or use the
-        #    user's custom override (sanitized; extension still from the format).
-        if custom_filename and custom_filename.strip():
-            filename_to_use = (sanitize(custom_filename) or "audio") + "." + out_fmt
-        else:
-            title_for_name = meta_title
-            if not title_for_name:
-                title_for_name = get_video_info(url).get('title', video_id) if not is_upload else video_id
-            filename_to_use = build_filename(title_for_name, meta_album_first, meta_artist, composer, delimiter, ext=out_fmt)
+        #    user's custom override. The base doubles as the track-identity key.
+        filename_base = save_filename_base(video_id, is_upload, url, custom_filename,
+                                           meta_title, meta_album_first, meta_artist,
+                                           composer, delimiter)
+        filename_to_use = filename_base + "." + out_fmt
 
         # 5. Determine output directory based on mode
         if BROWSER_DOWNLOAD_MODE:
@@ -1025,10 +1069,11 @@ def save_audio(
         # be rebuilt from it.
         if not BROWSER_DOWNLOAD_MODE:
             try:
-                # Segment-aware identity: cut ranges of one video are separate
-                # tracks; the archived original stays keyed by video_id (all
-                # segments share the one source download).
-                track_id = track_id_for(video_id, start_time, end_time)
+                # Identity = source + cut + name-deriving metadata: same name
+                # updates in place, different name is a sibling track. The
+                # archived original stays keyed by video_id (all variants
+                # share the one source download).
+                track_id = resolve_track_id(video_id, start_time, end_time, filename_base)
                 original_dest = archive_original(CACHE_DIR, video_id, ORIGINALS_DIR)
                 original_rel = (os.path.relpath(original_dest, DOWNLOAD_DIR)
                                 if original_dest else None)
@@ -1156,6 +1201,52 @@ def save_audio(
         if session_id in download_progress:
             download_progress[session_id] = {"status": "error", "message": str(e)}
         raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/save/peek")
+def save_peek(
+    url: Optional[str] = Query(None),
+    source_id: Optional[str] = Query(None),
+    start_time: Optional[float] = Query(None),
+    end_time: Optional[float] = Query(None),
+    custom_filename: Optional[str] = Query(None),
+    meta_title: Optional[str] = Query(None),
+    meta_artist: Optional[str] = Query(None),
+    meta_album: Optional[str] = Query(None),
+    meta_composer: Optional[str] = Query(None),
+    delimiter: str = Query("|"),
+    metadata_json: Optional[str] = Body(None, embed=True),
+):
+    """
+    Dry-run of /save's identity resolution: reports whether this save would
+    update an existing track, so the UI can warn before overwriting. Mirrors
+    /save's filename/identity derivation exactly (same helpers).
+    """
+    if BROWSER_DOWNLOAD_MODE:
+        return {"exists": False}
+    try:
+        video_id, source_path = resolve_source(url, source_id)
+    except HTTPException:
+        return {"exists": False}
+    custom_tags = []
+    if metadata_json:
+        try:
+            custom_tags = json.loads(metadata_json).get("custom_tags") or []
+        except Exception:
+            pass
+    composer = meta_composer or next(
+        (t.get("value") for t in custom_tags
+         if t.get("key", "").lower() == "composer"), None)
+    albums = split_multi(meta_album, delimiter)
+    base = save_filename_base(video_id, source_path is not None, url,
+                              custom_filename, meta_title,
+                              albums[0] if albums else None, meta_artist,
+                              composer, delimiter)
+    track_id = resolve_track_id(video_id, start_time, end_time, base)
+    sc = read_sidecar(track_id)
+    return {"exists": sc is not None, "track_id": track_id,
+            "title": (sc or {}).get("metadata", {}).get("title"),
+            "filename": (sc or {}).get("filename")}
+
 
 @app.get("/download-file")
 async def download_file(

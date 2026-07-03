@@ -134,6 +134,26 @@
                     metadata_json: Object.keys(metadataExtra).length > 0 ? JSON.stringify(metadataExtra) : null
                 });
 
+                // Server-save mode: same source + cut + name-deriving metadata
+                // means this save UPDATES an existing track — confirm first.
+                if (window.serverSaveMode) {
+                    try {
+                        const peek = await (await fetch(`/save/peek?${params.toString()}`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: saveBody,
+                        })).json();
+                        if (peek.exists) {
+                            const name = peek.title || peek.filename || 'this track';
+                            if (!confirm(`"${name}" is already in the library — saving will overwrite it (play stats and favorite are kept). Continue?`)) {
+                                els.downloadBtn.disabled = false;
+                                hidePipeline();
+                                return;
+                            }
+                        }
+                    } catch (e) { /* peek is best-effort; never block the save */ }
+                }
+
                 let downloadTriggered = false; // Prevent multiple download triggers
 
                 const poll = setInterval(async () => {

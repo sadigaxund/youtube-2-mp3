@@ -8,6 +8,42 @@ Releases are cut by pushing a `vX.Y.Z` git tag, which builds and publishes the
 Docker image (`sakhund/youtify:<version>` + `:latest`).
 
 
+#  [v2.4.0] - 2026-07-03
+
+The library-overhaul release: track identity got rebuilt from the ground up, files added outside the app can be adopted, metadata can be edited in bulk, and a two-tier playback cache (server SSD + offline device cache / PWA) keeps the HDD idle.
+
+## ✨ Highlights
+
+* **Name-Aware Track Identity:** Tracks are now keyed by *source video + cut range + name-deriving metadata* instead of the raw YouTube id. Different cut segments of one long video — and different titles over the same audio — coexist as separate tracks sharing a single archived original, while a same-name re-save updates in place (play stats and favorite preserved, audio file replaced — no more orphaned `_copyN` files). Legacy ids stay valid via a read-time fallback; no migration needed. A new `POST /save/peek` dry-run powers a pre-save warning when a download would overwrite an existing track.
+* **Discovery & Unresolved Drop-Zone:** *Settings → Scan for new files* adopts audio files placed in the save dir outside the app (top level by default, recursive opt-in) as **unresolved** tracks, prefilled from embedded tags. They wait in a dedicated sidebar drop-zone — kept out of All Tracks, facets, and playlists — where clicking a row opens the metadata editor; saving resolves it. The same zone accepts drag-and-drop batch imports (`POST /library/import`).
+* **Batch Metadata Editing:** Find-match-alter across the whole library (`POST /library/batch-edit`): rename or delete a custom key everywhere, or replace one value with another — token-aware for multi-value fields (`Sad` inside `Sad|Angry`). Toolbar button opens a modal with a live affected-count preview and confirm.
+* **Pinned Browse Groups:** Any custom metadata key (e.g. `Mood`) can be pinned as an extra Browse-by facet next to Albums/Artists/Genres/Years via the new **+** tab; pins persist per device and support custom facet covers.
+* **SSD Hot Tier + Offline Device Cache (PWA):** One policy (favorites → most played → most recent, greedy-filled into `HOT_CACHE_GB`) drives two caches: hot tracks are mirrored to the SSD cache dir and served from there (`GET /cache/status`, `POST /cache/refresh`), and a service worker caches played tracks on the device, prefetches `GET /cache-plan`, and answers Range requests from the stored blob. With HTTPS, Youtify installs to the Android homescreen as a PWA.
+* **Settings View:** New nav tab housing Storage & cache (hot-tier usage/refresh, device cache usage/clear) and Library maintenance (scan, rebuild) — replacing the old header buttons. The library header row is gone; batch edit lives in the toolbar as a layout-stable overlay.
+
+## 🛠️ Bug Fixes
+
+* **Segment Overwrite Data Loss:** Saving a cut of a long video used to overwrite the previous segment's sidecar and DB row, permanently losing its metadata and orphaning its file. Fixed by the identity rework (DB schema v5; the disposable index drops and rebuilds from sidecars on version mismatch).
+* **Stale Frontend Assets:** `/static` was served without cache headers, so browsers heuristically cached the JS for days and shipped fixes never reached open clients. `/` and `/static` now send `Cache-Control: no-cache` (cheap 304 revalidation).
+* **Cross-Player MediaSession Clobbering:** The preview player's pause/position listeners overwrote the library player's lock-screen state (the "mobile controls don't work" symptom). An ownership tag now keeps the inactive player's hands off the OS media session.
+* **Autocomplete Popups on Unfocused Inputs:** Both shared suggestion helpers now guard on focus, covering artist/genre/album chips, year, and custom-key fields in the download form and edit menu; filter fields gained autocomplete too.
+* **Chip Inputs Losing Fast Pastes:** Saving immediately after pasting into a chip input could read the chips before the pending text committed; reads now include pending text without minting spurious chips.
+* **Metadata Renames Mislabeling Extensions:** Editing metadata on a FLAC/WAV track renamed the file to `.mp3`; renames now keep the real extension.
+* **"← Library" Navigation & Placeholder Icon:** The back button no longer dumps you on the Downloads tab, and the no-cover note icon is properly centered.
+* **Concurrent Stat Updates:** Play-count/favorite sidecar writes are serialized so simultaneous clients can't drop each other's updates.
+
+## 🐳 Deployment
+
+New optional env var: `HOT_CACHE_GB` (default `2`) — SSD hot-tier budget inside the cache dir. Serve over HTTPS (e.g. `tailscale serve`) to enable the device cache, full lock-screen controls, and PWA install.
+
+```bash
+docker pull sakhund/youtify:2.4.0
+```
+
+---
+
+**Full Changelog**: https://github.com/sadigaxund/Youtify/compare/v2.3.2...v2.4.0
+
 #  [v2.3.2] - 2026-06-30
 
 Database index integrity fixes and automatic stale sidecar cleanup.

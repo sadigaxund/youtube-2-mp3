@@ -15,6 +15,7 @@ Polish release: mobile layout fixes, richer facet heroes, playback that survives
 ## ✨ Highlights
 
 * **Resume Across Reloads:** The player position is saved every few seconds and restored (paused) after a reload — one tap continues where you left off. Closing the collapsed player dismisses playback and the saved state; finished tracks don't resurrect.
+* **Now-Playing Ambient Blur:** The now-playing sidebar (desktop) / expanded sheet (mobile) now shows the current track's cover art as a blurred, darkened backdrop behind the controls — matching the hero pattern used in Browse views.
 * **Ambient Facet Heroes:** In Browse views the group cover doubles as a blurred, darkened backdrop filling the whole banner instead of leaving the right side empty.
 * **New Brand Icons:** Gradient-note logo generated in maskable (Android-safe) and rounded variants — used as the favicon, apple-touch-icon, PWA install icons, and a small logo in the header. Replaces the generic emoji favicon and the white-circle-mangled install icon.
 * **Full Value Space in Batch Edit:** `GET /suggestions` accepts a `limit` (up to 500); the batch-edit match field now lists every existing value instead of a top-10.
@@ -22,7 +23,7 @@ Polish release: mobile layout fixes, richer facet heroes, playback that survives
 ## 🛠️ Bug Fixes
 
 * **Buried Browse Tabs:** With many pinned groups the tab strip scrolled invisibly (unreachable with a mouse) and hid the "+" pin tab under the See-all/Back button — tabs now wrap to extra rows.
-* **Mobile Overflow:** The three-item nav no longer widens the page (slimmer header under 560px), toolbar control groups wrap instead of pushing "+ Add" out of bounds, and `overflow-x` is clamped globally — no more sideways-draggable, twitching viewport.
+* **Toolbar Rearrangement:** The library toolbar was restructured from a single flex-wrap row into two dedicated rows — **Filter** (label + field select + contains input + `+` icon + ✎ pencil icon) and **Sort** (label + sort select + direction + favorites). This eliminates the `+Add` button colliding with the Sort dropdown at desktop widths and prevents right-button overflow on mobile. `+Add` and `Batch Edit` shrunk to icon buttons (`plus` / `pencil` icons) to save space, and Filter/Sort labels gained `min-width` alignment so their dropdowns start at the same column.
 * **Version String:** The API reported 2.2.4 since two releases; now tracks the real version.
 
 ## 🐳 Deployment

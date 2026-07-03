@@ -142,12 +142,14 @@
                     const np = $('nowPlaying');
                     if (!it) {
                         np.classList.remove('has-track', 'np-expanded');   // hides body / mobile mini-bar
+                        np.style.removeProperty('--np-bg');
                         return;
                     }
                     np.classList.add('has-track');
                     const cov = $('npCover');
                     cov.onerror = () => { cov.onerror = null; cov.src = PLACEHOLDER; };
                     cov.src = `/library/${it.id}/cover?v=${encodeURIComponent(it.updated_at || '')}`;
+                    np.style.setProperty('--np-bg', `url("${cov.src}")`);
                     setMarquee($('npTitle'), it.title || it.filename || it.youtube_id);
                     setMarquee($('npArtist'), (it.artists || []).join(', '));
                     const nf = $('npFav');

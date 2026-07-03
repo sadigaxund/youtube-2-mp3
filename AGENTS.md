@@ -21,9 +21,10 @@ Functions freely cross-reference across files without import/export.
 | `search.js` | YouTube search, file upload, `onSourceReady` |
 | `mixer.js` | A/B compare snapshots |
 | `preview.js` | Range slider, audio player, OS media session, `onEffectChange` |
-| `library.js` | Library view, playlists, filter/sort, Browse-by facet grid + hero + editable facet covers, play queue, sleep timer, stats/favorites (IIFE-wrapped) |
+| `library.js` | Library view, playlists, filter/sort, Browse-by facet grid + hero + editable facet covers, play queue, sleep timer, stats/favorites, now-playing ambient blur background (IIFE-wrapped) |
 
 **Key patterns:**
+- `np.style.setProperty('--np-bg', ...)` in `renderNowPlaying()` sets the blurred cover background
 - `els.xxx` = cached `document.getElementById('xxx')`
 - `setLoading(btn, bool)` / `showError(msg)` / `showToast(path)` — global utils
 - `lucide.createIcons()` called after any HTML icon change

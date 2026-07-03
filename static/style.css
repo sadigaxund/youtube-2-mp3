@@ -1770,9 +1770,8 @@
 
         .lib-controls {
             display: flex;
-            flex-wrap: wrap;
-            gap: 0.6rem 1rem;
-            align-items: center;
+            flex-direction: column;
+            gap: 0.5rem;
             margin-bottom: 0.7rem;
         }
 
@@ -1780,15 +1779,6 @@
             display: flex;
             align-items: center;
             gap: 0.4rem;
-        }
-
-        .lib-ctl.filter {
-            flex: 1;
-            min-width: 280px;
-        }
-
-        .lib-ctl.sort {
-            flex-shrink: 0;
         }
 
         .lib-ctl-label {
@@ -1814,28 +1804,34 @@
             margin: 0;
         }
 
-        .lib-ctl.filter #libFilterValue {
+        /* The filter value input is wrapped by the autocomplete's .suggest-wrap;
+           the wrapper must take over the flexing or the row collapses unevenly. */
+        .lib-ctl.filter-row,
+        .lib-ctl.sort-row {
+            flex-wrap: wrap;
+        }
+        .lib-ctl.filter-row #libFilterField,
+        .lib-ctl.filter-row .suggest-wrap {
             flex: 1;
             min-width: 80px;
         }
-
-        /* The filter value input is wrapped by the autocomplete's .suggest-wrap;
-           the wrapper must take over the flexing or the row collapses unevenly. */
-        .lib-ctl.filter .suggest-wrap {
+        .lib-ctl.sort-row #libSortField {
             flex: 1;
             min-width: 120px;
         }
 
+        /* Align Filter/Sort labels so their dropdowns start at the same column. */
+        .lib-ctl-label {
+            min-width: 3.6em;
+        }
+
         /* Narrow screens: header slims down (three nav items + brand must fit
-           the viewport) and toolbar control groups wrap instead of pushing
-           the "+ Add" button out of bounds. */
+           the viewport). */
         @media (max-width: 560px) {
             .topbar-inner { padding: 0.7rem 0.8rem; gap: 0.5rem; }
             .brand { font-size: 1.1rem; }
             .topbar nav { gap: 0.2rem; }
             .nav-link { padding: 0.4rem 0.5rem; font-size: 0.78rem; }
-            .lib-ctl { flex-wrap: wrap; }
-            .lib-ctl.filter { min-width: 0; }
         }
 
         .lib-ctl-btn {
@@ -1893,14 +1889,38 @@
         }
 
         .now-playing {
+            position: relative;
+            overflow: hidden;
             width: 320px;
             flex-shrink: 0;
             align-self: flex-start;   /* never stretch to the track-list height */
             border: 1px solid var(--card-border);
             border-radius: 16px;
-            background: rgba(255, 255, 255, 0.03);
             padding: 1.1rem;
         }
+        /* Blurred cover background (bottom layer). */
+        .now-playing::before {
+            content: '';
+            position: absolute;
+            inset: -28px;
+            z-index: 0;
+            background-image: var(--np-bg, none);
+            background-size: cover;
+            background-position: center;
+            filter: blur(30px) brightness(0.45) saturate(1.25);
+            pointer-events: none;
+        }
+        /* Dark overlay (middle layer) — keeps text readable. */
+        .now-playing::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            z-index: 0;
+            background: rgba(0, 0, 0, 0.25);
+            pointer-events: none;
+        }
+        /* Content (top layer). */
+        .now-playing > * { position: relative; z-index: 1; }
 
         .np-empty {
             opacity: 0.5;
@@ -2072,13 +2092,6 @@
                 min-width: 0;
             }
 
-            /* Filter/sort each take a full row (the 280px min-width overflowed). */
-            .lib-ctl.filter,
-            .lib-ctl.sort {
-                flex: 1 1 100%;
-                min-width: 0;
-            }
-
             /* Sidebar collapses to a 'source ▾' picker; tap to reveal the list. */
             .pl-toggle {
                 display: flex;
@@ -2141,22 +2154,26 @@
                 border: none;
                 border-top: 1px solid var(--card-border);
                 border-radius: 0;
-                /* Near-opaque bg, no backdrop blur: blurring what's behind a
-                   fixed bar re-rasterizes on every scroll frame on mobile and
-                   makes the bar jitter. Solid paint + own compositor layer
-                   keep it rock-steady. */
-                background: rgb(15, 17, 21);
+                /* Background is transparent — the blurred cover image
+                   lives in ::before; the semi-transparent dark overlay
+                   lives in ::after (both pseudo-elements share the
+                   compositor layer from translateZ(0)). */
+                background: transparent;
                 transform: translateZ(0);
                 padding: 0;
             }
             /* Playback-position sweep: a faint tint that advances with the
-               track, layered over the bar background (text stays readable). */
-            .now-playing:not(.np-expanded) {
+               track, layered over the blur bar background (text stays readable). */
+            .now-playing:not(.np-expanded)::after {
                 background:
                     linear-gradient(90deg,
                         rgba(255, 0, 80, 0.14) var(--np-prog, 0%),
                         transparent var(--np-prog, 0%)),
-                    rgb(15, 17, 21);
+                    rgba(15, 17, 21, 0.7);
+            }
+            /* Override default ::after overlay for mobile (expanded sheet). */
+            .now-playing::after {
+                background: rgba(15, 17, 21, 0.7);
             }
 
             .now-playing:not(.has-track) {

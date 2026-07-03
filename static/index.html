@@ -473,13 +473,14 @@
                         <div class="lib-toolbar">
                             <input type="text" id="libSearch" class="lib-search" placeholder="Search title, artist, genre…">
                             <div class="lib-controls">
-                                <div class="lib-ctl filter">
+                                <div class="lib-ctl filter-row">
                                     <span class="lib-ctl-label">Filter</span>
                                     <select id="libFilterField"></select>
                                     <input type="text" id="libFilterValue" placeholder="contains…">
-                                    <button id="libAddFilter" type="button" class="lib-ctl-btn">+ Add</button>
+                                    <button id="libAddFilter" type="button" class="lib-ctl-btn lib-ctl-icon" title="Add filter"><i data-lucide="plus"></i></button>
+                                    <button id="libBatchBtn" type="button" class="lib-ctl-btn lib-ctl-icon" title="Batch edit metadata"><i data-lucide="pencil"></i></button>
                                 </div>
-                                <div class="lib-ctl sort">
+                                <div class="lib-ctl sort-row">
                                     <span class="lib-ctl-label">Sort</span>
                                     <select id="libSortField">
                                         <option value="created_at">Date added</option>
@@ -493,9 +494,6 @@
                                     </select>
                                     <button id="libSortDir" type="button" class="lib-ctl-btn lib-ctl-icon" title="Sort direction">↓</button>
                                     <button id="libFavToggle" type="button" class="lib-ctl-btn lib-ctl-icon lib-fav-toggle" title="Show favorites only">♥</button>
-                                </div>
-                                <div class="lib-ctl" style="margin-left:auto;">
-                                    <button id="libBatchBtn" type="button" class="lib-ctl-btn" title="Batch edit metadata (find, match, alter)">Batch edit</button>
                                 </div>
                             </div>
                             <div id="libChips" class="lib-chips"></div>

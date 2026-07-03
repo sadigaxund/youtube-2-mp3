@@ -8,6 +8,33 @@ Releases are cut by pushing a `vX.Y.Z` git tag, which builds and publishes the
 Docker image (`sakhund/youtify:<version>` + `:latest`).
 
 
+#  [v2.4.1] - 2026-07-03
+
+Polish release: mobile layout fixes, richer facet heroes, playback that survives reloads, and a proper brand icon set.
+
+## ✨ Highlights
+
+* **Resume Across Reloads:** The player position is saved every few seconds and restored (paused) after a reload — one tap continues where you left off. Closing the collapsed player dismisses playback and the saved state; finished tracks don't resurrect.
+* **Ambient Facet Heroes:** In Browse views the group cover doubles as a blurred, darkened backdrop filling the whole banner instead of leaving the right side empty.
+* **New Brand Icons:** Gradient-note logo generated in maskable (Android-safe) and rounded variants — used as the favicon, apple-touch-icon, PWA install icons, and a small logo in the header. Replaces the generic emoji favicon and the white-circle-mangled install icon.
+* **Full Value Space in Batch Edit:** `GET /suggestions` accepts a `limit` (up to 500); the batch-edit match field now lists every existing value instead of a top-10.
+
+## 🛠️ Bug Fixes
+
+* **Buried Browse Tabs:** With many pinned groups the tab strip scrolled invisibly (unreachable with a mouse) and hid the "+" pin tab under the See-all/Back button — tabs now wrap to extra rows.
+* **Mobile Overflow:** The three-item nav no longer widens the page (slimmer header under 560px), toolbar control groups wrap instead of pushing "+ Add" out of bounds, and `overflow-x` is clamped globally — no more sideways-draggable, twitching viewport.
+* **Version String:** The API reported 2.2.4 since two releases; now tracks the real version.
+
+## 🐳 Deployment
+
+```bash
+docker pull sakhund/youtify:2.4.1
+```
+
+---
+
+**Full Changelog**: https://github.com/sadigaxund/Youtify/compare/v2.4.0...v2.4.1
+
 #  [v2.4.0] - 2026-07-03
 
 The library-overhaul release: track identity got rebuilt from the ground up, files added outside the app can be adopted, metadata can be edited in bulk, and a two-tier playback cache (server SSD + offline device cache / PWA) keeps the HDD idle.

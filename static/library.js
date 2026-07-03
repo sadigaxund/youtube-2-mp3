@@ -55,6 +55,34 @@
                     $('nowPlaying').style.setProperty('--np-prog', '0%');
                     renderNowPlaying();
                 }
+                // --- Resume across reloads: remember what was playing + where.
+                let lastResumeSave = 0;
+                function saveResume() {
+                    if (libPlayingId == null) return;
+                    try {
+                        localStorage.setItem('youtify_resume',
+                            JSON.stringify({ id: libPlayingId, t: libAudio.currentTime || 0 }));
+                    } catch (e) { }
+                }
+                function clearResume() {
+                    try { localStorage.removeItem('youtify_resume'); } catch (e) { }
+                }
+                function restoreResume() {
+                    let saved = null;
+                    try { saved = JSON.parse(localStorage.getItem('youtify_resume') || 'null'); } catch (e) { }
+                    const it = saved && itemById(saved.id);
+                    if (!it) return;
+                    // Restore paused at the saved position — browsers block
+                    // autoplay without a gesture anyway; one tap continues.
+                    libPlayingId = saved.id;
+                    libAudio.src = `/library/${it.id}/audio?v=${encodeURIComponent(it.updated_at || '')}`;
+                    libAudio.addEventListener('loadedmetadata', () => {
+                        try { libAudio.currentTime = Math.min(saved.t || 0, Math.max(0, (libAudio.duration || 1) - 0.5)); } catch (e) { }
+                    }, { once: true });
+                    renderNowPlaying();
+                    updateLibPlayIcons();
+                }
+
                 function libTogglePlay(id) {
                     if (libPlayingId === id) {
                         if (libAudio.paused) libAudio.play().catch(() => {}); else libAudio.pause();
@@ -186,6 +214,7 @@
                 });
                 libAudio.addEventListener('pause', () => { updateLibPlayIcons(); if ('mediaSession' in navigator && window.msOwner === 'library') navigator.mediaSession.playbackState = 'paused'; });
                 libAudio.addEventListener('ended', () => {
+                    clearResume();   // finished tracks shouldn't resurrect on reload
                     if (sleepMode === 'eot') {
                         // Sleep at end of track: stop here (the queue is kept).
                         setSleepMode('off');
@@ -200,6 +229,7 @@
                     // Mobile mini-bar shows position as a background sweep.
                     $('nowPlaying').style.setProperty('--np-prog', (libAudio.currentTime / libAudio.duration * 100).toFixed(2) + '%');
                     updatePositionState();
+                    if (Date.now() - lastResumeSave > 3000) { lastResumeSave = Date.now(); saveResume(); }
                     // Count a play once past 30s (or half of a short track) — not on
                     // the first instant, so accidental clicks don't inflate stats.
                     if (playStatsArmed != null && playStatsArmed === libPlayingId &&
@@ -523,6 +553,11 @@
                             const hc = $('libHeroCover');
                             hc.classList.toggle('circ', currentSource.field === 'artist');
                             setFacetImg(hc, currentSource.field, currentSource.value, currentSource.coverId, currentSource.updated);
+                            // Same art as the cover, as an ambient blurred backdrop.
+                            const bgUrl = hasFacetCover(currentSource.field, currentSource.value)
+                                ? facetCoverUrl(currentSource.field, currentSource.value)
+                                : `/library/${currentSource.coverId}/cover?v=${encodeURIComponent(currentSource.updated || '')}`;
+                            $('libHero').style.setProperty('--hero-bg', `url("${bgUrl}")`);
                         }
                     }
 
@@ -1185,7 +1220,18 @@
                 });
                 $('npClose').addEventListener('click', (e) => {
                     e.stopPropagation();
-                    $('nowPlaying').classList.remove('np-expanded');
+                    const np = $('nowPlaying');
+                    if (np.classList.contains('np-expanded')) {
+                        np.classList.remove('np-expanded');   // full sheet -> mini-bar
+                        return;
+                    }
+                    // Closing the collapsed panel dismisses playback entirely —
+                    // including the resume-on-reload state.
+                    libAudio.pause();
+                    clearResume();
+                    libPlayingId = null;
+                    renderNowPlaying();
+                    updateLibPlayIcons();
                 });
 
                 $('plNewBtn').addEventListener('click', openCreate);
@@ -1383,7 +1429,8 @@
                 $('batchOp').addEventListener('change', refreshBatchPanel);
                 $('batchField').addEventListener('change', updateBatchPreview);
                 $('batchMatch').addEventListener('input', updateBatchPreview);
-                attachSuggest($('batchMatch'), () => $('batchField').value);
+                // Batch edit needs the whole value space visible, not a top-10.
+                attachSuggest($('batchMatch'), () => $('batchField').value, 500);
                 $('batchApply').addEventListener('click', async () => {
                     const op = $('batchOp').value, field = $('batchField').value;
                     const match = $('batchMatch').value.trim(), repl = $('batchReplace').value.trim();
@@ -1501,7 +1548,7 @@
                         if (cm) cm.style.display = '';
                         // Library is the default landing in server-save mode.
                         showView('library');
-                        loadLibrary();
+                        loadLibrary().then(restoreResume);
                         loadPlaylists();
                         loadFacets();
                     }

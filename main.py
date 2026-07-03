@@ -330,7 +330,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Youtify",
     description="High-quality YouTube Audio Downloader",
-    version="2.2.4",
+    version="2.4.1",
     lifespan=lifespan,
 )
 
@@ -2217,28 +2217,30 @@ def fetch_artist_pfp_task(url: str, artist: str):
 
 @app.get("/suggestions")
 def suggestions(kind: Optional[str] = Query(None), field: Optional[str] = Query(None),
-                q: str = Query("")):
+                q: str = Query(""), limit: int = Query(10, ge=1, le=500)):
     """
     Autocomplete sourced from the library.
       kind=artist|genre              -> normalized tags
       field=album|year|composer|<k>  -> distinct values for that field/custom key
       field=__keys__                 -> distinct custom-tag key names
+    limit lets callers that need the full value space (e.g. batch edit)
+    request more than the dropdown default.
     """
     if kind in ("artist", "genre"):
-        return {"suggestions": db.suggest_tags(kind, q)}
+        return {"suggestions": db.suggest_tags(kind, q, limit)}
     if field in ("artist", "genre"):
-        return {"suggestions": db.suggest_tags(field, q)}
+        return {"suggestions": db.suggest_tags(field, q, limit)}
     if field == "album":
         # Union of multi-value album tags and the legacy single-album column.
         out, seen = [], set()
-        for v in db.suggest_tags("album", q) + db.suggest_values("album", q):
+        for v in db.suggest_tags("album", q, limit) + db.suggest_values("album", q, limit):
             if v.lower() not in seen:
                 seen.add(v.lower()); out.append(v)
-        return {"suggestions": out[:10]}
+        return {"suggestions": out[:limit]}
     if field == "__keys__":
-        return {"suggestions": db.suggest_custom_keys(q)}
+        return {"suggestions": db.suggest_custom_keys(q, max(limit, 20))}
     if field:
-        return {"suggestions": db.suggest_values(field, q)}
+        return {"suggestions": db.suggest_values(field, q, limit)}
     raise HTTPException(status_code=422, detail="provide kind=artist|genre or field=<name>")
 
 

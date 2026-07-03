@@ -41,6 +41,10 @@
         }
 
         /* ---- App shell: sticky top bar + full-width, capped content ---- */
+        /* Nothing may widen the page: a single overflowing element makes the
+           whole viewport horizontally draggable on mobile (twitchy screen). */
+        html, body { overflow-x: hidden; max-width: 100%; }
+
         .topbar {
             position: fixed;            /* fixed overlay (not sticky) — no per-frame reposition, no jitter */
             top: 0;
@@ -1383,13 +1387,12 @@
         .lib-browse { margin-bottom: 1rem; }
         .browse-head { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.6rem; min-width: 0; }
         .browse-by { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-dim); white-space: nowrap; flex-shrink: 0; }
-        /* Tabs never wrap — they scroll horizontally when space runs out. */
+        /* Tabs wrap to extra rows when space runs out — a hidden horizontal
+           scroller was unreachable with a mouse and hid the "+" pin tab. */
         .browse-tabs {
-            display: flex; gap: 0.35rem; flex-wrap: nowrap;
-            overflow-x: auto; min-width: 0;
-            scrollbar-width: none;
+            display: flex; gap: 0.35rem; flex-wrap: wrap;
+            min-width: 0;
         }
-        .browse-tabs::-webkit-scrollbar { display: none; }
         .browse-tabs .browse-tab { flex-shrink: 0; white-space: nowrap; }
         .browse-tab {
             width: auto; margin: 0; padding: 0.25rem 0.7rem; font-size: 0.74rem; border-radius: 999px;
@@ -1426,13 +1429,23 @@
         }
         .browse-head-btn:hover { color: #fff; border-color: rgba(255, 255, 255, 0.3); }
 
-        /* Browse hero header */
+        /* Browse hero header. The facet cover doubles as an ambient blurred
+           backdrop (--hero-bg, set per facet in JS) so the wide right side of
+           the banner isn't dead space. */
         .lib-hero {
+            position: relative; overflow: hidden;
             display: flex; gap: 1.1rem; align-items: flex-end; margin-bottom: 1.1rem;
             padding: 1.1rem; border-radius: 14px;
             background: linear-gradient(135deg, rgba(255, 0, 80, 0.12), rgba(100, 140, 255, 0.10));
             border: 1px solid var(--card-border);
         }
+        .lib-hero::before {
+            content: ''; position: absolute; inset: -28px; z-index: 0;
+            background-image: var(--hero-bg, none);
+            background-size: cover; background-position: center;
+            filter: blur(30px) brightness(0.45) saturate(1.25);
+        }
+        .lib-hero > * { position: relative; z-index: 1; }
         .lib-hero-cover {
             width: 140px; height: 140px; object-fit: cover; border-radius: 12px; flex-shrink: 0;
             box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45); background: rgba(255, 255, 255, 0.05);
@@ -1811,6 +1824,18 @@
         .lib-ctl.filter .suggest-wrap {
             flex: 1;
             min-width: 120px;
+        }
+
+        /* Narrow screens: header slims down (three nav items + brand must fit
+           the viewport) and toolbar control groups wrap instead of pushing
+           the "+ Add" button out of bounds. */
+        @media (max-width: 560px) {
+            .topbar-inner { padding: 0.7rem 0.8rem; gap: 0.5rem; }
+            .brand { font-size: 1.1rem; }
+            .topbar nav { gap: 0.2rem; }
+            .nav-link { padding: 0.4rem 0.5rem; font-size: 0.78rem; }
+            .lib-ctl { flex-wrap: wrap; }
+            .lib-ctl.filter { min-width: 0; }
         }
 
         .lib-ctl-btn {

@@ -21,7 +21,7 @@
                 return out;
             }
 
-            function attachSuggest(input, fieldOrFn) {
+            function attachSuggest(input, fieldOrFn, limit) {
                 const wrap = document.createElement('span');
                 wrap.className = 'suggest-wrap';
                 input.parentNode.insertBefore(wrap, input);
@@ -52,7 +52,7 @@
                     const cur = input.value.trim().toLowerCase();
                     let list = [];
                     try {
-                        const res = await fetch(`/suggestions?field=${encodeURIComponent(field)}&q=${encodeURIComponent(input.value)}`);
+                        const res = await fetch(`/suggestions?field=${encodeURIComponent(field)}&q=${encodeURIComponent(input.value)}&limit=${limit || 10}`);
                         if (res.ok) list = (await res.json()).suggestions || [];
                     } catch (e) { /* offline / browser-download mode -> presets only */ }
                     // The fetch is async — by the time it resolves, focus may have
